@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scrapedatshi-mcp"
+version = "0.1.0"
+description = "MCP server for the scrapedatshi RAG pipeline API — use scrapedatshi tools directly from Claude Desktop"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "scrapedatshi", email = "hello@scrapedatshi.com" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "rag",
+    "scraping",
+    "chunking",
+    "embeddings",
+    "vector-database",
+    "claude",
+    "ai",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "scrapedatshi>=0.1.0",
+]
+
+[project.scripts]
+scrapedatshi-mcp = "scrapedatshi_mcp.server:main"
+
+[project.urls]
+Homepage = "https://scrapedatshi.com"
+Documentation = "https://docs.scrapedatshi.com/sdk/mcp"
+Repository = "https://github.com/mxchris18/scrapedatshi-mcp"
+"Bug Tracker" = "https://github.com/mxchris18/scrapedatshi-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scrapedatshi_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
