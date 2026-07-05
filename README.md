@@ -58,7 +58,7 @@ uv tool install scrapedatshi-mcp
 ### Option B — Install from source (local development)
 
 ```bash
-git clone https://github.com/mxchris18/scrapedatshi-mcp.git
+git clone https://github.com/scrapedatshi/scrapedatshi-mcp.git
 cd scrapedatshi-mcp
 pip install -e .
 ```

@@ -8,4 +8,9 @@ AI client, allowing conversational access to scraping, crawling, extraction,
 and vector DB sync operations.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("scrapedatshi-mcp")
+except PackageNotFoundError:
+    __version__ = "unknown"
