@@ -21,11 +21,16 @@ Just talk to Claude naturally:
 
 | Tool | What it does |
 |---|---|
+| `verify_provider_key` | Verify an LLM or embedding API key + get live model list |
+| `get_usage_guide` | Returns the guided wizard flow and tool selection reference |
 | `scrape_url` | Scrape & chunk a single URL into RAG-ready text segments |
+| `chunk_file` | Upload a local file (PDF, MD, TXT, etc.) and chunk it into RAG-ready segments |
 | `crawl_site` | Crawl an entire site (sitemap or spider mode) and return all chunks |
 | `extract_data` | Extract structured schema fields from a URL using your LLM |
 | `extract_crawl` | Multi-page schema extraction via site crawl |
-| `sync_to_vectordb` | Full pipeline: scrape → embed → inject into your vector DB |
+| `sync_to_vectordb` | Full pipeline: scrape URL → embed → inject into your vector DB |
+| `ingest_file` | Full pipeline: upload local file → embed → inject into your vector DB |
+| `autorag` | Full pipeline: crawl entire site → chunk → embed → inject into your vector DB |
 | `list_embedding_providers` | Discover supported embedding providers + model notes |
 | `list_vector_db_providers` | Discover supported vector DBs + required config fields |
 
