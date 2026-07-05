@@ -103,7 +103,15 @@ async def _discover_openai_llm_models(api_key: str) -> dict:
             reverse=True,
         )
         if not models:
-            models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]
+            return {
+                "valid": False,
+                "models": [],
+                "error": (
+                    "Key is valid but no text generation models were found for this account. "
+                    "Check your OpenAI account permissions — your key may be restricted to "
+                    "specific model families. Contact OpenAI support if unexpected."
+                ),
+            }
         return {"valid": True, "models": models, "error": None}
     except Exception as e:
         msg = str(e)
@@ -221,11 +229,15 @@ async def _discover_openai_embed_models(api_key: str) -> dict:
             [m.id for m in response.data if "embedding" in m.id.lower()], reverse=True
         )
         if not models:
-            models = [
-                "text-embedding-3-small",
-                "text-embedding-3-large",
-                "text-embedding-ada-002",
-            ]
+            return {
+                "valid": False,
+                "models": [],
+                "error": (
+                    "Key is valid but no embedding models were found for this account. "
+                    "Check your OpenAI account permissions — your key may be restricted. "
+                    "Contact OpenAI support if unexpected."
+                ),
+            }
         return {"valid": True, "models": models, "error": None}
     except Exception as e:
         msg = str(e)
