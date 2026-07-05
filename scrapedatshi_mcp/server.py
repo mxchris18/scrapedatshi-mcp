@@ -8,10 +8,13 @@ Tools exposed:
     verify_provider_key      — Verify an LLM or embedding API key + get live model list
     get_usage_guide          — Returns the guided wizard flow Claude should follow
     scrape_url               — Scrape & chunk a single URL
+    chunk_file               — Upload a local file (PDF/MD/TXT/etc), chunk it, return JSON
     crawl_site               — Crawl a whole site (sitemap or spider mode)
     extract_data             — Extract structured schema from a URL using your LLM
     extract_crawl            — Multi-page schema extraction via site crawl
-    sync_to_vectordb         — Full pipeline: scrape → embed → inject into vector DB
+    sync_to_vectordb         — Full pipeline: scrape URL → embed → inject into vector DB
+    ingest_file              — Full pipeline: upload local file → embed → inject into vector DB
+    autorag                  — Full pipeline: crawl site → chunk → embed → inject into vector DB
     list_embedding_providers — Discover supported embedding providers + required fields
     list_vector_db_providers — Discover supported vector DBs + required fields
 
@@ -279,11 +282,14 @@ async def _discover_cohere_embed_models(api_key: str) -> dict:
         data = resp.json()
         models = [m["name"] for m in data.get("models", []) if m.get("name")]
         if not models:
-            models = [
-                "embed-english-v3.0",
-                "embed-multilingual-v3.0",
-                "embed-english-light-v3.0",
-            ]
+            return {
+                "valid": False,
+                "models": [],
+                "error": (
+                    "Key is valid but no embedding models were found for this account. "
+                    "Check your Cohere account permissions or contact Cohere support."
+                ),
+            }
         return {"valid": True, "models": models, "error": None}
     except Exception as e:
         return {"valid": False, "models": [], "error": f"Cohere error: {str(e)[:200]}"}
@@ -357,7 +363,14 @@ async def _discover_mistral_embed_models(api_key: str) -> dict:
             m["id"] for m in data.get("data", []) if "embed" in m.get("id", "").lower()
         ]
         if not models:
-            models = ["mistral-embed"]
+            return {
+                "valid": False,
+                "models": [],
+                "error": (
+                    "Key is valid but no embedding models were found for this account. "
+                    "Check your Mistral account permissions or contact Mistral support."
+                ),
+            }
         return {"valid": True, "models": models, "error": None}
     except Exception as e:
         return {"valid": False, "models": [], "error": f"Mistral error: {str(e)[:200]}"}
@@ -1038,6 +1051,323 @@ async def list_tools() -> list[types.Tool]:
                 ],
             },
         ),
+        # ── chunk_file ────────────────────────────────────────────────────────
+        types.Tool(
+            name="chunk_file",
+            description=(
+                "Upload a local file, chunk its content into RAG-ready text segments, "
+                "and return the structured chunks as JSON. No embedding or vector DB required.\n\n"
+                "Supported file formats: .pdf, .md, .txt, .yaml, .yml, .json\n"
+                "Maximum file size: 50 MB\n\n"
+                "Use this when the user says 'chunk this PDF', 'process this document', "
+                "'read this file', or wants to extract text from a local file.\n\n"
+                "Provide the ABSOLUTE path to the file on the user's local machine "
+                "(e.g. 'C:/Users/user/Documents/report.pdf' or '/home/user/docs/manual.pdf').\n\n"
+                "If contextual_retrieval=true is requested, follow the PRE-FLIGHT sequence:\n"
+                "1. Call verify_provider_key(provider, 'llm') → get live model list\n"
+                "2. Ask user to choose a model\n"
+                "3. Present Contextual Retrieval as a recommended upgrade\n\n"
+                "LLM keys can be omitted if set as environment variables."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Absolute path to the local file to chunk. Supported: .pdf, .md, .txt, .yaml, .yml, .json. Example: 'C:/Users/user/Documents/report.pdf'",
+                    },
+                    "chunk_size": {
+                        "type": "integer",
+                        "description": "Target token count per chunk. Default: 512. Range: 64–4096.",
+                        "default": 512,
+                        "minimum": 64,
+                        "maximum": 4096,
+                    },
+                    "overlap": {
+                        "type": "integer",
+                        "description": "Token overlap between consecutive chunks. Default: 50.",
+                        "default": 50,
+                        "minimum": 0,
+                        "maximum": 500,
+                    },
+                    "contextual_retrieval": {
+                        "type": "boolean",
+                        "description": "Enable RAG 2.0 contextual enrichment. Present as a recommended upgrade. Requires llm_provider and llm_model from verify_provider_key.",
+                        "default": False,
+                    },
+                    "llm_provider": {
+                        "type": "string",
+                        "description": "LLM provider for contextual retrieval. Verify with verify_provider_key first.",
+                        "enum": ["openai", "anthropic", "gemini"],
+                    },
+                    "llm_api_key": {
+                        "type": "string",
+                        "description": "API key for the LLM provider. Can be omitted if set as env var.",
+                    },
+                    "llm_model": {
+                        "type": "string",
+                        "description": "LLM model name from verify_provider_key. Do not guess or hardcode.",
+                    },
+                },
+                "required": ["file_path"],
+            },
+        ),
+        # ── ingest_file ───────────────────────────────────────────────────────
+        types.Tool(
+            name="ingest_file",
+            description=(
+                "Full RAG pipeline for local files: upload a file, embed the chunks using "
+                "your embedding provider, and inject the vectors into your vector database.\n\n"
+                "Supported file formats: .pdf, .md, .txt, .yaml, .yml, .json\n"
+                "Maximum file size: 50 MB\n\n"
+                "Use this when the user wants to ADD a local document (PDF, markdown, etc.) "
+                "to their vector DB. This is the file-based equivalent of sync_to_vectordb.\n\n"
+                "Provide the ABSOLUTE path to the file on the user's local machine.\n\n"
+                "PRE-FLIGHT REQUIRED — before calling:\n"
+                "1. Call verify_provider_key(embedding_provider, 'embedding') → get live embedding model list\n"
+                "2. Present models to user, ask them to choose one\n"
+                "3. Call list_vector_db_providers if user is unsure what config fields are needed\n"
+                "4. Present Contextual Retrieval as a recommended upgrade: 'Would you like "
+                "Contextual Retrieval (RAG 2.0)? It enriches each chunk with LLM-generated "
+                "context before embedding, improving retrieval accuracy by 35–50%. "
+                "Costs ~$0.001/chunk extra.'\n"
+                "5. If contextual_retrieval=yes: call verify_provider_key(llm_provider, 'llm') too\n\n"
+                "Keys can be omitted if set as environment variables."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Absolute path to the local file to ingest. Supported: .pdf, .md, .txt, .yaml, .yml, .json. Example: 'C:/Users/user/Documents/report.pdf'",
+                    },
+                    "embedding_provider": {
+                        "type": "string",
+                        "description": "Embedding provider. Call verify_provider_key(provider, 'embedding') first to get available models.",
+                        "enum": [
+                            "openai",
+                            "cohere",
+                            "gemini",
+                            "mistral",
+                            "voyage",
+                            "ollama",
+                        ],
+                    },
+                    "embedding_model": {
+                        "type": "string",
+                        "description": "Embedding model name from verify_provider_key. Do not guess or hardcode.",
+                    },
+                    "embedding_api_key": {
+                        "type": "string",
+                        "description": "API key for the embedding provider. Can be omitted if set as env var.",
+                    },
+                    "embedding_endpoint": {
+                        "type": "string",
+                        "description": "Public HTTPS endpoint for Ollama only (e.g. from ngrok). Not needed for cloud providers.",
+                    },
+                    "vector_db": {
+                        "type": "string",
+                        "description": "Vector DB provider. Call list_vector_db_providers to see required config fields for each.",
+                        "enum": [
+                            "pinecone",
+                            "qdrant",
+                            "chroma",
+                            "supabase",
+                            "weaviate",
+                            "mongodb",
+                            "azure_cosmos",
+                            "azure_cosmos_mongo",
+                            "lancedb",
+                        ],
+                    },
+                    "vector_db_config": {
+                        "type": "object",
+                        "description": (
+                            "Provider-specific config. Call list_vector_db_providers for required fields. "
+                            "API keys within this config can be omitted if set as env vars."
+                        ),
+                        "additionalProperties": True,
+                    },
+                    "chunk_size": {
+                        "type": "integer",
+                        "description": "Target token count per chunk. Default: 512.",
+                        "default": 512,
+                        "minimum": 64,
+                        "maximum": 4096,
+                    },
+                    "overlap": {
+                        "type": "integer",
+                        "description": "Token overlap between consecutive chunks. Default: 50.",
+                        "default": 50,
+                        "minimum": 0,
+                        "maximum": 500,
+                    },
+                    "contextual_retrieval": {
+                        "type": "boolean",
+                        "description": "Enable RAG 2.0 contextual enrichment before embedding. Present as a recommended upgrade. Requires llm_provider and llm_model.",
+                        "default": False,
+                    },
+                    "llm_provider": {
+                        "type": "string",
+                        "description": "LLM provider for contextual retrieval. Verify with verify_provider_key(provider, 'llm') first.",
+                        "enum": ["openai", "anthropic", "gemini"],
+                    },
+                    "llm_api_key": {
+                        "type": "string",
+                        "description": "API key for the LLM provider. Can be omitted if set as env var.",
+                    },
+                    "llm_model": {
+                        "type": "string",
+                        "description": "LLM model name from verify_provider_key. Do not guess or hardcode.",
+                    },
+                },
+                "required": [
+                    "file_path",
+                    "embedding_provider",
+                    "vector_db",
+                    "vector_db_config",
+                ],
+            },
+        ),
+        # ── autorag ───────────────────────────────────────────────────────────
+        types.Tool(
+            name="autorag",
+            description=(
+                "Full AutoRAG pipeline: crawl an entire domain, chunk every page, embed all "
+                "chunks, and inject into your vector database — all in a single call.\n\n"
+                "Use this when the user wants to bulk-ingest an entire website into their "
+                "vector DB. This combines crawl_site + sync_to_vectordb into one operation.\n\n"
+                "⚠️ ALWAYS confirm the max_pages limit with the user before calling. "
+                "Default is 5 pages. Each page is fetched, chunked, embedded, and injected. "
+                "For large sites, warn about credit usage and wait times first.\n\n"
+                "PRE-FLIGHT REQUIRED — before calling:\n"
+                "1. Call verify_provider_key(embedding_provider, 'embedding') → get live embedding model list\n"
+                "2. Present models to user, ask them to choose one\n"
+                "3. Call list_vector_db_providers if user is unsure what config fields are needed\n"
+                "4. Confirm max_pages with the user\n"
+                "5. Present Contextual Retrieval as a recommended upgrade: 'Would you like "
+                "Contextual Retrieval (RAG 2.0)? It enriches each chunk with LLM-generated "
+                "context before embedding, improving retrieval accuracy by 35–50%. "
+                "Costs ~$0.001/chunk extra.'\n"
+                "6. If contextual_retrieval=yes: call verify_provider_key(llm_provider, 'llm') too\n\n"
+                "Keys can be omitted if set as environment variables."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The root domain to crawl (e.g. 'https://docs.example.com').",
+                    },
+                    "embedding_provider": {
+                        "type": "string",
+                        "description": "Embedding provider. Call verify_provider_key(provider, 'embedding') first to get available models.",
+                        "enum": [
+                            "openai",
+                            "cohere",
+                            "gemini",
+                            "mistral",
+                            "voyage",
+                            "ollama",
+                        ],
+                    },
+                    "embedding_model": {
+                        "type": "string",
+                        "description": "Embedding model name from verify_provider_key. Do not guess or hardcode.",
+                    },
+                    "embedding_api_key": {
+                        "type": "string",
+                        "description": "API key for the embedding provider. Can be omitted if set as env var.",
+                    },
+                    "vector_db": {
+                        "type": "string",
+                        "description": "Vector DB provider. Call list_vector_db_providers to see required config fields for each.",
+                        "enum": [
+                            "pinecone",
+                            "qdrant",
+                            "chroma",
+                            "supabase",
+                            "weaviate",
+                            "mongodb",
+                            "azure_cosmos",
+                            "azure_cosmos_mongo",
+                            "lancedb",
+                        ],
+                    },
+                    "vector_db_config": {
+                        "type": "object",
+                        "description": (
+                            "Provider-specific config. Call list_vector_db_providers for required fields. "
+                            "API keys within this config can be omitted if set as env vars."
+                        ),
+                        "additionalProperties": True,
+                    },
+                    "crawl_mode": {
+                        "type": "string",
+                        "description": "'sitemap': reads sitemap.xml (best for docs/blogs). 'spider': follows links from root URL (works on any site).",
+                        "enum": ["sitemap", "spider"],
+                        "default": "sitemap",
+                    },
+                    "max_pages": {
+                        "type": "integer",
+                        "description": "Maximum pages to crawl and inject. Default: 5. Maximum: 200. Always confirm with user for large sites.",
+                        "default": 5,
+                        "minimum": 1,
+                        "maximum": 200,
+                    },
+                    "include_pattern": {
+                        "type": "string",
+                        "description": "Only crawl URLs containing this substring (e.g. '/docs/').",
+                    },
+                    "exclude_pattern": {
+                        "type": "string",
+                        "description": "Skip URLs containing this substring (e.g. '/blog/').",
+                    },
+                    "selector": {
+                        "type": "string",
+                        "description": "Optional CSS selector applied to every page before chunking.",
+                    },
+                    "chunk_size": {
+                        "type": "integer",
+                        "description": "Target token count per chunk. Default: 512.",
+                        "default": 512,
+                        "minimum": 64,
+                        "maximum": 4096,
+                    },
+                    "overlap": {
+                        "type": "integer",
+                        "description": "Token overlap between consecutive chunks. Default: 50.",
+                        "default": 50,
+                        "minimum": 0,
+                        "maximum": 500,
+                    },
+                    "contextual_retrieval": {
+                        "type": "boolean",
+                        "description": "Enable RAG 2.0 contextual enrichment before embedding. Present as a recommended upgrade. Requires llm_provider and llm_model.",
+                        "default": False,
+                    },
+                    "llm_provider": {
+                        "type": "string",
+                        "description": "LLM provider for contextual retrieval. Verify with verify_provider_key(provider, 'llm') first.",
+                        "enum": ["openai", "anthropic", "gemini"],
+                    },
+                    "llm_api_key": {
+                        "type": "string",
+                        "description": "API key for the LLM provider. Can be omitted if set as env var.",
+                    },
+                    "llm_model": {
+                        "type": "string",
+                        "description": "LLM model name from verify_provider_key. Do not guess or hardcode.",
+                    },
+                },
+                "required": [
+                    "url",
+                    "embedding_provider",
+                    "vector_db",
+                    "vector_db_config",
+                ],
+            },
+        ),
         # ── list_embedding_providers ──────────────────────────────────────────
         types.Tool(
             name="list_embedding_providers",
@@ -1081,6 +1411,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             return await _handle_extract_crawl(arguments)
         elif name == "sync_to_vectordb":
             return await _handle_sync_to_vectordb(arguments)
+        elif name == "chunk_file":
+            return await _handle_chunk_file(arguments)
+        elif name == "ingest_file":
+            return await _handle_ingest_file(arguments)
+        elif name == "autorag":
+            return await _handle_autorag(arguments)
         elif name == "list_embedding_providers":
             return _handle_list_embedding_providers()
         elif name == "list_vector_db_providers":
@@ -1164,10 +1500,13 @@ def _handle_get_usage_guide() -> list[types.TextContent]:
 | Goal | Tool |
 |---|---|
 | Read/summarize a single web page | `scrape_url` |
+| Chunk a local file (PDF, MD, TXT, etc.) | `chunk_file` |
 | Get chunks from multiple pages | `crawl_site` |
 | Extract specific fields from one page | `extract_data` |
 | Extract specific fields from many pages | `extract_crawl` |
 | Add web content to a vector DB | `sync_to_vectordb` |
+| Add a local file to a vector DB | `ingest_file` |
+| Bulk-ingest an entire website to a vector DB | `autorag` |
 | Check what embedding providers are available | `list_embedding_providers` |
 | Check what vector DB config fields are needed | `list_vector_db_providers` |
 | Verify an API key + get live model list | `verify_provider_key` |
@@ -1658,6 +1997,346 @@ async def _handle_sync_to_vectordb(arguments: dict) -> list[types.TextContent]:
         f"🔢 Vectors upserted: {result.vectors_upserted}",
         f"🔤 Total tokens: {result.total_tokens:,}",
         f"🧮 Embedding provider: {result.embedding_provider}",
+        f"🗄️  Vector DB: {result.vector_db_provider}",
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
+    ]
+    if result.contextual_retrieval_used:
+        lines.append("🧠 Contextual Retrieval: enabled")
+    if result.contextual_retrieval_error:
+        lines.append(
+            f"⚠️  Contextual Retrieval warning: {result.contextual_retrieval_error}"
+        )
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_chunk_file(arguments: dict) -> list[types.TextContent]:
+    file_path = arguments.get("file_path")
+    if not file_path:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'file_path' is required. Provide the absolute path to the local file.",
+            )
+        ]
+
+    contextual_retrieval = arguments.get("contextual_retrieval", False)
+    llm_provider = arguments.get("llm_provider")
+    llm_api_key = None
+    if contextual_retrieval:
+        llm_api_key = _resolve_llm_key(arguments, llm_provider)
+        if not llm_api_key:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=(
+                        "❌ contextual_retrieval=true requires an LLM API key. "
+                        "Pass llm_api_key as an argument, or set OPENAI_API_KEY / "
+                        "ANTHROPIC_API_KEY / GEMINI_API_KEY in your MCP environment config."
+                    ),
+                )
+            ]
+        if not arguments.get("llm_model"):
+            return [
+                types.TextContent(
+                    type="text",
+                    text=(
+                        "❌ llm_model is required when contextual_retrieval=true. "
+                        "Call verify_provider_key first to get the available model list, "
+                        "then ask the user to choose one."
+                    ),
+                )
+            ]
+
+    client = _get_client()
+    try:
+        result = client.pipeline.chunk_file(
+            file_path=file_path,
+            chunk_size=arguments.get("chunk_size", 512),
+            overlap=arguments.get("overlap", 50),
+            contextual_retrieval=contextual_retrieval,
+            llm_provider=llm_provider if contextual_retrieval else None,
+            llm_api_key=llm_api_key,
+            llm_model=arguments.get("llm_model"),
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"✅ Chunked file: {result.source}",
+        f"📦 Chunks: {result.total_chunks}",
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
+    ]
+    if result.contextual_retrieval_used:
+        lines.append("🧠 Contextual Retrieval: enabled")
+    if result.contextual_retrieval_error:
+        lines.append(
+            f"⚠️  Contextual Retrieval warning: {result.contextual_retrieval_error}"
+        )
+
+    lines.append("\n--- Chunks ---")
+    for i, chunk in enumerate(result.chunks, 1):
+        preview = chunk.content[:300].replace("\n", " ")
+        lines.append(
+            f"\n[Chunk {i} | ~{chunk.token_estimate} tokens]\n{preview}{'...' if len(chunk.content) > 300 else ''}"
+        )
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_ingest_file(arguments: dict) -> list[types.TextContent]:
+    file_path = arguments.get("file_path")
+    embedding_provider = arguments.get("embedding_provider")
+    vector_db = arguments.get("vector_db")
+
+    if not file_path:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'file_path' is required. Provide the absolute path to the local file.",
+            )
+        ]
+    if not embedding_provider:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'embedding_provider' is required. Call list_embedding_providers to see options, then verify_provider_key to get models.",
+            )
+        ]
+    if not vector_db:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'vector_db' is required. Call list_vector_db_providers to see options and required config fields.",
+            )
+        ]
+    if not arguments.get("embedding_model") and embedding_provider != "ollama":
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "❌ 'embedding_model' is required. Call verify_provider_key(embedding_provider, 'embedding') "
+                    "to get the live model list, then ask the user to choose one."
+                ),
+            )
+        ]
+
+    embedding_api_key = _resolve_embedding_key(arguments, embedding_provider)
+    if embedding_api_key is None:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ No API key found for embedding provider '{embedding_provider}'. "
+                    "Pass embedding_api_key as an argument, or set the corresponding env var "
+                    "(OPENAI_API_KEY, COHERE_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, VOYAGE_API_KEY) "
+                    "in your MCP config. For Ollama, pass an empty string."
+                ),
+            )
+        ]
+
+    vector_db_config = _resolve_vector_db_config(arguments, vector_db)
+    provider_info = VECTOR_DB_PROVIDERS.get(vector_db, {})
+    required_fields = provider_info.get("required_fields", [])
+    missing = [f for f in required_fields if not vector_db_config.get(f)]
+    if missing:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ Missing required fields for vector DB '{vector_db}': {missing}. "
+                    "Call list_vector_db_providers for details on required fields."
+                ),
+            )
+        ]
+
+    contextual_retrieval = arguments.get("contextual_retrieval", False)
+    llm_provider = arguments.get("llm_provider")
+    llm_api_key = None
+    if contextual_retrieval:
+        if not arguments.get("llm_model"):
+            return [
+                types.TextContent(
+                    type="text",
+                    text=(
+                        "❌ llm_model is required when contextual_retrieval=true. "
+                        "Call verify_provider_key(llm_provider, 'llm') to get the live model list."
+                    ),
+                )
+            ]
+        llm_api_key = _resolve_llm_key(arguments, llm_provider)
+        if not llm_api_key:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=(
+                        "❌ contextual_retrieval=true requires an LLM API key. "
+                        "Pass llm_api_key as an argument, or set OPENAI_API_KEY / "
+                        "ANTHROPIC_API_KEY / GEMINI_API_KEY in your MCP environment config."
+                    ),
+                )
+            ]
+
+    client = _get_client()
+    try:
+        result = client.pipeline.ingest(
+            file_path=file_path,
+            embedding_provider=embedding_provider,
+            embedding_api_key=embedding_api_key,
+            embedding_model=arguments.get("embedding_model"),
+            embedding_endpoint=arguments.get("embedding_endpoint"),
+            vector_db=vector_db,
+            vector_db_config=vector_db_config,
+            chunk_size=arguments.get("chunk_size", 512),
+            overlap=arguments.get("overlap", 50),
+            contextual_retrieval=contextual_retrieval,
+            llm_provider=llm_provider if contextual_retrieval else None,
+            llm_api_key=llm_api_key,
+            llm_model=arguments.get("llm_model"),
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"✅ Ingest complete: {result.filename}",
+        f"📊 Status: {result.status}",
+        f"📦 Chunks created: {result.chunks_created}",
+        f"🔢 Vectors upserted: {result.vectors_upserted}",
+        f"🔤 Total tokens: {result.total_tokens:,}",
+        f"🧮 Embedding provider: {result.embedding_provider}",
+        f"🗄️  Vector DB: {result.vector_db_provider}",
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
+    ]
+    if result.contextual_retrieval_used:
+        lines.append("🧠 Contextual Retrieval: enabled")
+    if result.contextual_retrieval_error:
+        lines.append(
+            f"⚠️  Contextual Retrieval warning: {result.contextual_retrieval_error}"
+        )
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_autorag(arguments: dict) -> list[types.TextContent]:
+    url = arguments.get("url")
+    embedding_provider = arguments.get("embedding_provider")
+    vector_db = arguments.get("vector_db")
+
+    if not url:
+        return [types.TextContent(type="text", text="❌ 'url' is required.")]
+    if not embedding_provider:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'embedding_provider' is required. Call list_embedding_providers to see options, then verify_provider_key to get models.",
+            )
+        ]
+    if not vector_db:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'vector_db' is required. Call list_vector_db_providers to see options and required config fields.",
+            )
+        ]
+    if not arguments.get("embedding_model") and embedding_provider != "ollama":
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "❌ 'embedding_model' is required. Call verify_provider_key(embedding_provider, 'embedding') "
+                    "to get the live model list, then ask the user to choose one."
+                ),
+            )
+        ]
+
+    embedding_api_key = _resolve_embedding_key(arguments, embedding_provider)
+    if embedding_api_key is None:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ No API key found for embedding provider '{embedding_provider}'. "
+                    "Pass embedding_api_key as an argument, or set the corresponding env var "
+                    "(OPENAI_API_KEY, COHERE_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, VOYAGE_API_KEY) "
+                    "in your MCP config. For Ollama, pass an empty string."
+                ),
+            )
+        ]
+
+    vector_db_config = _resolve_vector_db_config(arguments, vector_db)
+    provider_info = VECTOR_DB_PROVIDERS.get(vector_db, {})
+    required_fields = provider_info.get("required_fields", [])
+    missing = [f for f in required_fields if not vector_db_config.get(f)]
+    if missing:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ Missing required fields for vector DB '{vector_db}': {missing}. "
+                    "Call list_vector_db_providers for details on required fields."
+                ),
+            )
+        ]
+
+    contextual_retrieval = arguments.get("contextual_retrieval", False)
+    llm_provider = arguments.get("llm_provider")
+    llm_api_key = None
+    if contextual_retrieval:
+        if not arguments.get("llm_model"):
+            return [
+                types.TextContent(
+                    type="text",
+                    text=(
+                        "❌ llm_model is required when contextual_retrieval=true. "
+                        "Call verify_provider_key(llm_provider, 'llm') to get the live model list."
+                    ),
+                )
+            ]
+        llm_api_key = _resolve_llm_key(arguments, llm_provider)
+        if not llm_api_key:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=(
+                        "❌ contextual_retrieval=true requires an LLM API key. "
+                        "Pass llm_api_key as an argument, or set OPENAI_API_KEY / "
+                        "ANTHROPIC_API_KEY / GEMINI_API_KEY in your MCP environment config."
+                    ),
+                )
+            ]
+
+    client = _get_client()
+    try:
+        result = client.pipeline.autorag(
+            url=url,
+            embedding_provider=embedding_provider,
+            embedding_api_key=embedding_api_key,
+            embedding_model=arguments.get("embedding_model"),
+            vector_db=vector_db,
+            vector_db_config=vector_db_config,
+            crawl_mode=arguments.get("crawl_mode", "sitemap"),
+            max_pages=arguments.get("max_pages", 5),
+            include_pattern=arguments.get("include_pattern"),
+            exclude_pattern=arguments.get("exclude_pattern"),
+            selector=arguments.get("selector"),
+            chunk_size=arguments.get("chunk_size", 512),
+            overlap=arguments.get("overlap", 50),
+            contextual_retrieval=contextual_retrieval,
+            llm_provider=llm_provider if contextual_retrieval else None,
+            llm_api_key=llm_api_key,
+            llm_model=arguments.get("llm_model"),
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"✅ AutoRAG complete: {result.root_url}",
+        f"🔍 Pages discovered: {result.pages_discovered}",
+        f"📄 Pages crawled: {result.pages_crawled} | Failed: {result.pages_failed}",
+        f"📦 Total chunks: {result.total_chunks}",
+        f"🔢 Vectors upserted: {result.vectors_upserted}",
+        f"🔤 Total tokens: {result.total_tokens:,}",
+        f"🧮 Embedding: {result.embedding_provider} / {result.embedding_model}",
         f"🗄️  Vector DB: {result.vector_db_provider}",
         f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
     ]
