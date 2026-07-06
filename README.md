@@ -72,8 +72,9 @@ pip install -e .
 
 ## Claude Desktop configuration
 
-Open your Claude Desktop config file:
+**Easiest way to find your config file:** Open Claude Desktop → **Settings** → **Developer** → **Edit Config**
 
+Alternatively, the file is located at:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -306,6 +307,48 @@ To prevent runaway credit usage and client timeouts:
 - `extract_crawl`: defaults to **5 pages**, maximum 50 per call
 
 Claude will always confirm page limits with you before calling multi-page tools.
+
+---
+
+## Troubleshooting
+
+### Contextual Retrieval fails — "model no longer available"
+
+LLM providers periodically deprecate older models. If you see an error like *"This model is no longer available"*, run `verify_provider_key` again to get the current list of available models for your key, then select a current model.
+
+**Current recommended models for contextual retrieval:**
+- **Gemini**: `gemini-2.5-flash` or `gemini-2.0-flash-001` (not `gemini-2.0-flash` — deprecated)
+- **OpenAI**: any current `gpt-4o` or `gpt-4.1` series model
+- **Anthropic**: any current `claude-3-5` or `claude-3-7` series model
+
+**Provider model & deprecation pages:**
+- OpenAI: [platform.openai.com/docs/deprecations](https://platform.openai.com/docs/deprecations)
+- Anthropic: [docs.anthropic.com/en/docs/about-claude/models](https://docs.anthropic.com/en/docs/about-claude/models)
+- Google Gemini: [ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models)
+- Cohere: [docs.cohere.com/docs/models](https://docs.cohere.com/docs/models)
+- Mistral: [docs.mistral.ai/getting-started/models](https://docs.mistral.ai/getting-started/models/)
+- Voyage AI: [docs.voyageai.com/docs/embeddings](https://docs.voyageai.com/docs/embeddings)
+
+---
+
+### Contextual Retrieval fails — "quota exceeded"
+
+Your LLM provider API key has no remaining credits. Add credits at your provider's billing page. Note that **scrapedatshi credits are separate from your LLM provider credits** — you need both.
+
+---
+
+### `verify_provider_key` returns no models
+
+If key verification succeeds but returns an empty model list, your API key may be restricted to specific model families or your account may have limited access. Check your provider's dashboard for account restrictions.
+
+---
+
+### Claude Desktop doesn't show scrapedatshi tools
+
+1. Make sure you saved `claude_desktop_config.json` correctly (valid JSON, no trailing commas)
+2. Fully quit and reopen Claude Desktop — a simple window close is not enough
+3. Check that `uvx` is installed: run `uvx --version` in your terminal
+4. If using `--refresh`, the first startup may take a few seconds to download the package
 
 ---
 
