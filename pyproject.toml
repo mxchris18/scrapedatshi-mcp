@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scrapedatshi-mcp"
-version = "0.1.5"
+version = "0.1.6"
 description = "MCP server for the scrapedatshi RAG pipeline API — use scrapedatshi tools directly from Claude Desktop"
 readme = "README.md"
 license = { text = "MIT" }
@@ -45,14 +45,14 @@ dependencies = [
 # Only install the ones you use.
 openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.20.0"]
-gemini = ["google-genai>=1.0.0"]
-voyage = ["voyageai>=0.2.0"]
+gemini = ["google-genai>=2.0.0"]
+voyage = ["voyageai>=0.4.0"]
 # Install all provider SDKs at once:
 all = [
     "openai>=1.0.0",
     "anthropic>=0.20.0",
-    "google-genai>=1.0.0",
-    "voyageai>=0.2.0",
+    "google-genai>=2.0.0",
+    "voyageai>=0.4.0",
 ]
 
 [project.scripts]
