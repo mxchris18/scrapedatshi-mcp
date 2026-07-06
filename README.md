@@ -77,14 +77,18 @@ Open your Claude Desktop config file:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-### If installed via PyPI / pip (using `uvx`)
+### Recommended — `uvx` with all provider SDKs (auto-updates on restart)
 
 ```json
 {
   "mcpServers": {
     "scrapedatshi": {
       "command": "uvx",
-      "args": ["scrapedatshi-mcp"],
+      "args": [
+        "--from", "scrapedatshi-mcp[all]",
+        "--refresh",
+        "scrapedatshi-mcp"
+      ],
       "env": {
         "SCRAPEDATSHI_API_KEY": "sds_your_key_here"
       }
@@ -92,6 +96,9 @@ Open your Claude Desktop config file:
   }
 }
 ```
+
+- `[all]` installs all provider SDKs (OpenAI, Anthropic, Gemini, Voyage AI) so `verify_provider_key` works for any provider
+- `--refresh` checks PyPI for updates every time Claude Desktop starts — no manual reinstalls needed
 
 ### If installed via pip (using `python`)
 
@@ -144,7 +151,11 @@ Add your provider keys to the `env` block in `claude_desktop_config.json`:
   "mcpServers": {
     "scrapedatshi": {
       "command": "uvx",
-      "args": ["scrapedatshi-mcp"],
+      "args": [
+        "--from", "scrapedatshi-mcp[all]",
+        "--refresh",
+        "scrapedatshi-mcp"
+      ],
       "env": {
         "SCRAPEDATSHI_API_KEY": "sds_your_key_here",
 
