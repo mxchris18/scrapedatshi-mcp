@@ -11,6 +11,7 @@ Use scrapedatshi's scraping, crawling, extraction, and vector DB sync tools dire
 Just talk to Claude naturally:
 
 - *"Scrape https://docs.example.com and give me the chunks"*
+- *"Chunk this PDF URL: https://my-bucket.s3.amazonaws.com/report.pdf"* — PDF URLs are automatically detected and extracted
 - *"Crawl https://example.com/products and extract the title and price from every page"*
 - *"Sync https://docs.example.com to my Pinecone index using OpenAI embeddings"*
 - *"Crawl the entire docs.stripe.com site (all 800 pages) and inject it into my Pinecone index"* — large sites are auto-batched server-side, no manual pagination needed

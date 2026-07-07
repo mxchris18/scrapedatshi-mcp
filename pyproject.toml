@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scrapedatshi-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "MCP server for the scrapedatshi RAG pipeline API — use scrapedatshi tools directly from Claude Desktop"
 readme = "README.md"
 license = { text = "MIT" }
@@ -36,7 +36,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0",
-    "scrapedatshi>=0.5.8",
+    "scrapedatshi>=0.5.9",
     "httpx>=0.27.0",
 ]
 
