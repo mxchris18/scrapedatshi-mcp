@@ -13,6 +13,7 @@ Just talk to Claude naturally:
 - *"Scrape https://docs.example.com and give me the chunks"*
 - *"Crawl https://example.com/products and extract the title and price from every page"*
 - *"Sync https://docs.example.com to my Pinecone index using OpenAI embeddings"*
+- *"Crawl the entire docs.stripe.com site (all 800 pages) and inject it into my Pinecone index"* — large sites are auto-batched server-side, no manual pagination needed
 - *"What embedding providers does scrapedatshi support?"*
 
 ---
@@ -30,7 +31,7 @@ Just talk to Claude naturally:
 | `extract_crawl` | Multi-page schema extraction via site crawl |
 | `sync_to_vectordb` | Full pipeline: scrape URL → embed → inject into your vector DB |
 | `ingest_file` | Full pipeline: upload local file → embed → inject into your vector DB |
-| `autorag` | Full pipeline: crawl entire site → chunk → embed → inject into your vector DB |
+| `autorag` | Full pipeline: crawl entire site → chunk → embed → inject into your vector DB (large sites auto-batched) |
 | `list_embedding_providers` | Discover supported embedding providers + model notes |
 | `list_vector_db_providers` | Discover supported vector DBs + required config fields |
 
@@ -299,11 +300,24 @@ Claude calls `list_vector_db_providers` and returns the required and optional fi
 
 ---
 
+## Auto-Batching for Large Sites
+
+When you ask Claude to crawl a large site (more than 200 pages), the `autorag` and `crawl_site` tools automatically split the job into sequential batches server-side. You don't need to do anything special — just ask Claude to crawl the site and it handles the rest.
+
+> **You:** Crawl the entire docs.stripe.com site and inject everything into my Pinecone index.
+
+Claude calls `autorag` with a high `max_pages` value. If the site has 600 pages, the server processes it as 3 batches of 200 pages each and returns the combined result.
+
+The response will include `auto_batched: true` and `batches_processed: N` when batching occurred.
+
+---
+
 ## Safety limits
 
 To prevent runaway credit usage and client timeouts:
 
-- `crawl_site`: defaults to **10 pages**, maximum 200
+- `crawl_site`: defaults to **10 pages**, maximum 200 per batch (auto-batched for larger jobs)
+- `autorag`: defaults to **5 pages**, no hard upper limit — large jobs are auto-batched
 - `extract_crawl`: defaults to **5 pages**, maximum 50 per call
 
 Claude will always confirm page limits with you before calling multi-page tools.
