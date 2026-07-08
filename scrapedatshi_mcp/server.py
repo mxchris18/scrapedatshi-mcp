@@ -15,6 +15,9 @@ Tools exposed:
     sync_to_vectordb         — Full pipeline: scrape URL → embed → inject into vector DB
     ingest_file              — Full pipeline: upload local file → embed → inject into vector DB
     autorag                  — Full pipeline: crawl site → chunk → embed → inject into vector DB
+    inspect_vectordb         — Read vector DB metadata: dimension, vector count, suggested models (free)
+    query_vectordb           — Semantic search: embed a query and retrieve top-N chunks
+    rag_chat                 — RAG Chat: retrieve chunks + generate a grounded LLM answer
     list_embedding_providers — Discover supported embedding providers + required fields
     list_vector_db_providers — Discover supported vector DBs + required fields
 
@@ -1417,6 +1420,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             return await _handle_ingest_file(arguments)
         elif name == "autorag":
             return await _handle_autorag(arguments)
+        elif name == "inspect_vectordb":
+            return await _handle_inspect_vectordb(arguments)
+        elif name == "query_vectordb":
+            return await _handle_query_vectordb(arguments)
+        elif name == "rag_chat":
+            return await _handle_rag_chat(arguments)
         elif name == "list_embedding_providers":
             return _handle_list_embedding_providers()
         elif name == "list_vector_db_providers":
@@ -2346,6 +2355,282 @@ async def _handle_autorag(arguments: dict) -> list[types.TextContent]:
         lines.append(
             f"⚠️  Contextual Retrieval warning: {result.contextual_retrieval_error}"
         )
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_inspect_vectordb(arguments: dict) -> list[types.TextContent]:
+    vector_db = arguments.get("vector_db")
+    if not vector_db:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'vector_db' is required. Call list_vector_db_providers to see options.",
+            )
+        ]
+
+    vector_db_config = _resolve_vector_db_config(arguments, vector_db)
+    provider_info = VECTOR_DB_PROVIDERS.get(vector_db, {})
+    required_fields = provider_info.get("required_fields", [])
+    missing = [f for f in required_fields if not vector_db_config.get(f)]
+    if missing:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ Missing required fields for vector DB '{vector_db}': {missing}. "
+                    "Call list_vector_db_providers for details on required fields."
+                ),
+            )
+        ]
+
+    client = _get_client()
+    try:
+        result = client.pipeline.inspect_vectordb(
+            vector_db=vector_db,
+            vector_db_config=vector_db_config,
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"✅ Inspected vector DB: {result.provider}",
+        f"📐 Dimension: {result.dimension}"
+        + (" (unknown)" if not result.dimension_known else ""),
+        f"🔢 Total vectors: {result.total_vector_count:,}",
+    ]
+    if result.namespace:
+        lines.append(
+            f"📁 Namespace: {result.namespace} ({result.namespace_vector_count:,} vectors)"
+        )
+    if result.suggested_models:
+        lines.append("\n🤖 Suggested embedding models (based on dimension):")
+        for m in result.suggested_models:
+            lines.append(f"  • {m.label} ({m.provider} / {m.model})")
+    if result.note:
+        lines.append(f"\n💡 {result.note}")
+    lines.append(
+        "\n⚠️ Use the same embedding model that was used during ingestion. "
+        "Using a different model will produce meaningless results."
+    )
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_query_vectordb(arguments: dict) -> list[types.TextContent]:
+    query = arguments.get("query")
+    embedding_provider = arguments.get("embedding_provider")
+    vector_db = arguments.get("vector_db")
+
+    if not query:
+        return [types.TextContent(type="text", text="❌ 'query' is required.")]
+    if not embedding_provider:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'embedding_provider' is required. Call list_embedding_providers to see options.",
+            )
+        ]
+    if not arguments.get("embedding_model"):
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "❌ 'embedding_model' is required. Use inspect_vectordb first to confirm "
+                    "which model was used during ingestion, then pass that exact model name."
+                ),
+            )
+        ]
+    if not vector_db:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'vector_db' is required. Call list_vector_db_providers to see options.",
+            )
+        ]
+
+    embedding_api_key = _resolve_embedding_key(arguments, embedding_provider)
+    if embedding_api_key is None:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ No API key found for embedding provider '{embedding_provider}'. "
+                    "Pass embedding_api_key as an argument, or set the corresponding env var."
+                ),
+            )
+        ]
+
+    vector_db_config = _resolve_vector_db_config(arguments, vector_db)
+    provider_info = VECTOR_DB_PROVIDERS.get(vector_db, {})
+    required_fields = provider_info.get("required_fields", [])
+    missing = [f for f in required_fields if not vector_db_config.get(f)]
+    if missing:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ Missing required fields for vector DB '{vector_db}': {missing}. "
+                    "Call list_vector_db_providers for details."
+                ),
+            )
+        ]
+
+    client = _get_client()
+    try:
+        result = client.pipeline.query_vectordb(
+            query=query,
+            embedding_provider=embedding_provider,
+            embedding_api_key=embedding_api_key,
+            embedding_model=arguments.get("embedding_model"),
+            vector_db=vector_db,
+            vector_db_config=vector_db_config,
+            top_k=arguments.get("top_k", 5),
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"✅ Query complete",
+        f"🔍 Query: {result.query}",
+        f"🧮 Embedding: {result.embedding_provider} / {result.embedding_model}",
+        f"🗄️  Vector DB: {result.vector_db_provider}",
+        f"📦 Chunks retrieved: {result.chunks_retrieved} / {result.top_k_requested} requested",
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
+    ]
+
+    if result.results:
+        lines.append("\n--- Results ---")
+        for i, r in enumerate(result.results, 1):
+            preview = r.text[:300].replace("\n", " ")
+            lines.append(f"\n[{i}] Score: {r.score:.3f}")
+            lines.append(preview + ("..." if len(r.text) > 300 else ""))
+            if r.metadata:
+                lines.append(f"    Metadata: {json.dumps(r.metadata)}")
+    else:
+        lines.append(
+            "\n⚠️ No results found. Check that your embedding model matches the one used during ingestion."
+        )
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_rag_chat(arguments: dict) -> list[types.TextContent]:
+    query = arguments.get("query")
+    embedding_provider = arguments.get("embedding_provider")
+    vector_db = arguments.get("vector_db")
+    llm_provider = arguments.get("llm_provider")
+
+    if not query:
+        return [types.TextContent(type="text", text="❌ 'query' is required.")]
+    if not embedding_provider:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'embedding_provider' is required.",
+            )
+        ]
+    if not arguments.get("embedding_model"):
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "❌ 'embedding_model' is required. Use inspect_vectordb first to confirm "
+                    "which model was used during ingestion."
+                ),
+            )
+        ]
+    if not vector_db:
+        return [types.TextContent(type="text", text="❌ 'vector_db' is required.")]
+    if not llm_provider:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'llm_provider' is required. One of: 'openai', 'anthropic', 'gemini'.",
+            )
+        ]
+    if not arguments.get("llm_model"):
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "❌ 'llm_model' is required. Call verify_provider_key(llm_provider, 'llm') "
+                    "to get the live model list, then ask the user to choose one."
+                ),
+            )
+        ]
+
+    embedding_api_key = _resolve_embedding_key(arguments, embedding_provider)
+    if embedding_api_key is None:
+        return [
+            types.TextContent(
+                type="text",
+                text=f"❌ No API key found for embedding provider '{embedding_provider}'.",
+            )
+        ]
+
+    llm_api_key = _resolve_llm_key(arguments, llm_provider)
+    if not llm_api_key:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ No API key found for LLM provider '{llm_provider}'. "
+                    "Pass llm_api_key as an argument, or set OPENAI_API_KEY / "
+                    "ANTHROPIC_API_KEY / GEMINI_API_KEY in your MCP environment config."
+                ),
+            )
+        ]
+
+    vector_db_config = _resolve_vector_db_config(arguments, vector_db)
+    provider_info = VECTOR_DB_PROVIDERS.get(vector_db, {})
+    required_fields = provider_info.get("required_fields", [])
+    missing = [f for f in required_fields if not vector_db_config.get(f)]
+    if missing:
+        return [
+            types.TextContent(
+                type="text",
+                text=f"❌ Missing required fields for vector DB '{vector_db}': {missing}.",
+            )
+        ]
+
+    client = _get_client()
+    try:
+        result = client.pipeline.rag_chat(
+            query=query,
+            embedding_provider=embedding_provider,
+            embedding_api_key=embedding_api_key,
+            embedding_model=arguments.get("embedding_model"),
+            vector_db=vector_db,
+            vector_db_config=vector_db_config,
+            llm_provider=llm_provider,
+            llm_api_key=llm_api_key,
+            llm_model=arguments.get("llm_model"),
+            top_k=arguments.get("top_k", 5),
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"💬 RAG Chat Answer",
+        f"🔍 Query: {result.query}",
+        f"🧮 Embedding: {result.embedding_provider} / {result.embedding_model}",
+        f"🤖 LLM: {result.llm_provider} / {result.llm_model}",
+        f"📦 Chunks retrieved: {result.chunks_retrieved}",
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
+    ]
+    if result.llm_error:
+        lines.append(f"⚠️  LLM error: {result.llm_error}")
+
+    lines.append("\n--- Answer ---")
+    lines.append(result.answer)
+
+    if result.sources:
+        lines.append("\n--- Sources ---")
+        for i, s in enumerate(result.sources, 1):
+            preview = s.text[:200].replace("\n", " ")
+            lines.append(f"\n[{i}] Score: {s.score:.3f}")
+            lines.append(preview + ("..." if len(s.text) > 200 else ""))
 
     return [types.TextContent(type="text", text="\n".join(lines))]
 

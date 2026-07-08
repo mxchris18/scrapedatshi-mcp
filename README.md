@@ -37,6 +37,7 @@ Just talk to Claude naturally:
 | `autorag` | Full pipeline: crawl entire site → chunk → embed → inject into your vector DB (large sites auto-batched) |
 | `inspect_vectordb` | Read vector DB metadata: dimension, vector count, suggested embedding models (free) |
 | `query_vectordb` | Semantic search: embed a query and retrieve the most relevant chunks from your vector DB |
+| `rag_chat` | RAG Chat: retrieve top-N chunks from your vector DB and generate a grounded LLM answer |
 | `list_embedding_providers` | Discover supported embedding providers + model notes |
 | `list_vector_db_providers` | Discover supported vector DBs + required config fields |
 
