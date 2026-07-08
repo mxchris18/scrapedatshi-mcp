@@ -16,6 +16,8 @@ Just talk to Claude naturally:
 - *"Sync https://docs.example.com to my Pinecone index using OpenAI embeddings"*
 - *"Crawl the entire docs.stripe.com site (all 800 pages) and inject it into my Pinecone index"* — large sites are auto-batched server-side, no manual pagination needed
 - *"What embedding providers does scrapedatshi support?"*
+- *"Inspect my Pinecone index and tell me what embedding model was used"*
+- *"Query my Pinecone index for information about API authentication"*
 
 ---
 
@@ -33,6 +35,8 @@ Just talk to Claude naturally:
 | `sync_to_vectordb` | Full pipeline: scrape URL → embed → inject into your vector DB |
 | `ingest_file` | Full pipeline: upload local file → embed → inject into your vector DB |
 | `autorag` | Full pipeline: crawl entire site → chunk → embed → inject into your vector DB (large sites auto-batched) |
+| `inspect_vectordb` | Read vector DB metadata: dimension, vector count, suggested embedding models (free) |
+| `query_vectordb` | Semantic search: embed a query and retrieve the most relevant chunks from your vector DB |
 | `list_embedding_providers` | Discover supported embedding providers + model notes |
 | `list_vector_db_providers` | Discover supported vector DBs + required config fields |
 
