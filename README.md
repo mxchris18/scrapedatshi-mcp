@@ -18,6 +18,7 @@ Just talk to Claude naturally:
 - *"What embedding providers does scrapedatshi support?"*
 - *"Inspect my Pinecone index and tell me what embedding model was used"*
 - *"Query my Pinecone index for information about API authentication"*
+- *"Ingest all the JSON files in my ./scrapy_output/ folder into my Pinecone index"*
 
 ---
 
@@ -34,6 +35,7 @@ Just talk to Claude naturally:
 | `extract_crawl` | Multi-page schema extraction via site crawl |
 | `sync_to_vectordb` | Full pipeline: scrape URL → embed → inject into your vector DB |
 | `ingest_file` | Full pipeline: upload local file → embed → inject into your vector DB |
+| `ingest_folder` | Full pipeline: bulk-ingest a folder of pre-scraped files → embed → inject into your vector DB |
 | `autorag` | Full pipeline: crawl entire site → chunk → embed → inject into your vector DB (large sites auto-batched) |
 | `inspect_vectordb` | Read vector DB metadata: dimension, vector count, suggested embedding models (free) |
 | `query_vectordb` | Semantic search: embed a query and retrieve the most relevant chunks from your vector DB |

@@ -1435,6 +1435,112 @@ async def list_tools() -> list[types.Tool]:
                 ],
             },
         ),
+        # ── ingest_folder ─────────────────────────────────────────────────────
+        types.Tool(
+            name="ingest_folder",
+            description=(
+                "Bulk ingest an entire folder of pre-scraped files — chunk, embed, and inject "
+                "into your vector database. Designed for users who have content from external "
+                "scrapers (Scrapy, Playwright, wget, etc.) and want to embed it into their vector DB.\n\n"
+                "Supports .md, .txt, .json, .yaml, and .yml files. For JSON files, automatically "
+                "detects Scrapy/crawler array exports (e.g. output.json with thousands of items) "
+                "and extracts text from each item individually.\n\n"
+                "All processing runs locally on the machine running Claude Desktop — no server-side "
+                "crawling. Rate limit errors from your embedding provider are handled automatically "
+                "with exponential backoff.\n\n"
+                "Provide the ABSOLUTE path to the folder on the user's local machine.\n\n"
+                "PRE-FLIGHT REQUIRED — before calling:\n"
+                "1. Call verify_provider_key(embedding_provider, 'embedding') → get live embedding model list\n"
+                "2. Present models to user, ask them to choose one\n"
+                "3. Call list_vector_db_providers if user is unsure what config fields are needed\n"
+                "4. Confirm max_files with the user for large datasets\n\n"
+                "Keys can be omitted if set as environment variables."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "folder_path": {
+                        "type": "string",
+                        "description": "Absolute path to the folder containing files to ingest. Example: 'C:/Users/user/scrapy_output/' or '/home/user/data/'",
+                    },
+                    "embedding_provider": {
+                        "type": "string",
+                        "description": "Embedding provider. Call verify_provider_key(provider, 'embedding') first to get available models.",
+                        "enum": [
+                            "openai",
+                            "cohere",
+                            "gemini",
+                            "mistral",
+                            "voyage",
+                            "ollama",
+                        ],
+                    },
+                    "embedding_model": {
+                        "type": "string",
+                        "description": "Embedding model name from verify_provider_key. Do not guess or hardcode.",
+                    },
+                    "embedding_api_key": {
+                        "type": "string",
+                        "description": "API key for the embedding provider. Can be omitted if set as env var.",
+                    },
+                    "vector_db": {
+                        "type": "string",
+                        "description": "Vector DB provider. Call list_vector_db_providers to see required config fields for each.",
+                        "enum": [
+                            "pinecone",
+                            "qdrant",
+                            "chroma",
+                            "supabase",
+                            "weaviate",
+                            "mongodb",
+                            "azure_cosmos",
+                            "azure_cosmos_mongo",
+                            "lancedb",
+                        ],
+                    },
+                    "vector_db_config": {
+                        "type": "object",
+                        "description": (
+                            "Provider-specific config. Call list_vector_db_providers for required fields. "
+                            "API keys within this config can be omitted if set as env vars."
+                        ),
+                        "additionalProperties": True,
+                    },
+                    "file_extensions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "File extensions to process. Default: ['.md', '.txt', '.json', '.yaml', '.yml']. Example: ['.json'] to process only JSON files.",
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "If true, recurse into subdirectories. Default: true.",
+                        "default": True,
+                    },
+                    "max_files": {
+                        "type": "integer",
+                        "description": "Maximum number of files to process. Default: unlimited. Confirm with user for large datasets.",
+                        "minimum": 1,
+                    },
+                    "batch_delay": {
+                        "type": "number",
+                        "description": "Seconds to wait between files (default: 0.5). Increase to 1.0–2.0 for large batches to avoid embedding provider rate limits.",
+                        "default": 0.5,
+                        "minimum": 0,
+                    },
+                    "json_text_keys": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Keys to look for when extracting text from JSON items. Default: ['text', 'content', 'html', 'body', 'markdown', 'description']. Used for Scrapy/crawler JSON array exports.",
+                    },
+                },
+                "required": [
+                    "folder_path",
+                    "embedding_provider",
+                    "vector_db",
+                    "vector_db_config",
+                ],
+            },
+        ),
         # ── list_embedding_providers ──────────────────────────────────────────
         types.Tool(
             name="list_embedding_providers",
@@ -1490,6 +1596,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             return await _handle_query_vectordb(arguments)
         elif name == "rag_chat":
             return await _handle_rag_chat(arguments)
+        elif name == "ingest_folder":
+            return await _handle_ingest_folder(arguments)
         elif name == "list_embedding_providers":
             return _handle_list_embedding_providers()
         elif name == "list_vector_db_providers":
@@ -2700,6 +2808,118 @@ async def _handle_rag_chat(arguments: dict) -> list[types.TextContent]:
             preview = s.text[:200].replace("\n", " ")
             lines.append(f"\n[{i}] Score: {s.score:.3f}")
             lines.append(preview + ("..." if len(s.text) > 200 else ""))
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_ingest_folder(arguments: dict) -> list[types.TextContent]:
+    folder_path = arguments.get("folder_path")
+    embedding_provider = arguments.get("embedding_provider")
+    vector_db = arguments.get("vector_db")
+
+    if not folder_path:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'folder_path' is required. Provide the absolute path to the folder.",
+            )
+        ]
+    if not embedding_provider:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'embedding_provider' is required. Call list_embedding_providers to see options, then verify_provider_key to get models.",
+            )
+        ]
+    if not vector_db:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ 'vector_db' is required. Call list_vector_db_providers to see options and required config fields.",
+            )
+        ]
+    if not arguments.get("embedding_model") and embedding_provider != "ollama":
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "❌ 'embedding_model' is required. Call verify_provider_key(embedding_provider, 'embedding') "
+                    "to get the live model list, then ask the user to choose one."
+                ),
+            )
+        ]
+
+    embedding_api_key = _resolve_embedding_key(arguments, embedding_provider)
+    if embedding_api_key is None:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ No API key found for embedding provider '{embedding_provider}'. "
+                    "Pass embedding_api_key as an argument, or set the corresponding env var "
+                    "(OPENAI_API_KEY, COHERE_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, VOYAGE_API_KEY) "
+                    "in your MCP config. For Ollama, pass an empty string."
+                ),
+            )
+        ]
+
+    vector_db_config = _resolve_vector_db_config(arguments, vector_db)
+    provider_info = VECTOR_DB_PROVIDERS.get(vector_db, {})
+    required_fields = provider_info.get("required_fields", [])
+    missing = [f for f in required_fields if not vector_db_config.get(f)]
+    if missing:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"❌ Missing required fields for vector DB '{vector_db}': {missing}. "
+                    "Call list_vector_db_providers for details on required fields."
+                ),
+            )
+        ]
+
+    # Build optional params
+    file_extensions = arguments.get("file_extensions") or None
+    json_text_keys = arguments.get("json_text_keys") or None
+
+    client = _get_client()
+    try:
+        result = client.pipeline.ingest_folder(
+            folder_path=folder_path,
+            embedding_provider=embedding_provider,
+            embedding_api_key=embedding_api_key,
+            embedding_model=arguments.get("embedding_model"),
+            embedding_endpoint=arguments.get("embedding_endpoint"),
+            vector_db=vector_db,
+            vector_db_config=vector_db_config,
+            chunk_size=arguments.get("chunk_size", 512),
+            overlap=arguments.get("overlap", 50),
+            file_extensions=file_extensions,
+            recursive=arguments.get("recursive", True),
+            max_files=arguments.get("max_files"),
+            batch_delay=arguments.get("batch_delay", 0.5),
+            json_text_keys=json_text_keys,
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"✅ Folder ingest complete: {folder_path}",
+        f"📁 Files processed: {result.files_processed}",
+        f"❌ Files failed: {result.files_failed}",
+        f"📦 Total chunks: {result.total_chunks}",
+        f"🔢 Vectors upserted: {result.vectors_upserted}",
+        f"🧮 Embedding: {result.embedding_provider}",
+        f"🗄️  Vector DB: {result.vector_db_provider}",
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
+    ]
+
+    if result.errors:
+        lines.append(f"\n⚠️  {len(result.errors)} file(s) failed:")
+        for err in result.errors[:10]:
+            lines.append(f"  • {err['file']}: {err['error']}")
+        if len(result.errors) > 10:
+            lines.append(f"  ... and {len(result.errors) - 10} more errors.")
 
     return [types.TextContent(type="text", text="\n".join(lines))]
 
