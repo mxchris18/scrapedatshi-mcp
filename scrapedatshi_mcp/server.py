@@ -1062,10 +1062,20 @@ async def list_tools() -> list[types.Tool]:
         types.Tool(
             name="chunk_file",
             description=(
-                "Upload a local file, chunk its content into RAG-ready text segments, "
-                "and return the structured chunks as JSON. No embedding or vector DB required.\n\n"
+                "Parse a local file and chunk its content into RAG-ready text segments. "
+                "Returns structured JSON chunks. No embedding or vector DB required.\n\n"
                 "Supported file formats: .pdf, .md, .txt, .yaml, .yml, .json\n"
                 "Maximum file size: 50 MB\n\n"
+                "FETCH MODE: By default (local-fetch mode), the file is parsed on the "
+                "user's machine using their own CPU — no heavy PDF processing on the server. "
+                "The extracted text is sent to the server for chunking only. "
+                "This is cheaper ($0.0020/file) and keeps large PDF processing off the server.\n\n"
+                "For scanned/image-only PDFs that need OCR, the MCP server must be configured "
+                "with SCRAPEDATSHI_FETCH_MODE=server in the Claude Desktop config — this routes "
+                "the file through the server's OCR pipeline ($0.0040/file).\n\n"
+                "PDF DEPENDENCY: Local PDF parsing requires pdfplumber. If not installed, "
+                "the tool will raise an ImportError with install instructions. "
+                "Install with: pip install pdfplumber\n\n"
                 "Use this when the user says 'chunk this PDF', 'process this document', "
                 "'read this file', or wants to extract text from a local file.\n\n"
                 "Provide the ABSOLUTE path to the file on the user's local machine "
