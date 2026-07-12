@@ -702,6 +702,25 @@ async def list_tools() -> list[types.Tool]:
                         "type": "string",
                         "description": "LLM model name. MUST be chosen from the list returned by verify_provider_key — do not guess or hardcode.",
                     },
+                    "cookies": {
+                        "type": "object",
+                        "description": (
+                            "Optional dict of cookies to include with the request for authenticated scraping "
+                            '(e.g. {"session": "abc123", "auth_token": "xyz"}). '
+                            "Only used in local-fetch mode (default). Never forwarded to the server. "
+                            "Use this for pages behind a login wall — pass your browser session cookie."
+                        ),
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "headers": {
+                        "type": "object",
+                        "description": (
+                            "Optional dict of additional HTTP request headers "
+                            '(e.g. {"Authorization": "Bearer eyJ..."}). '
+                            "Only used in local-fetch mode (default). Never forwarded to the server."
+                        ),
+                        "additionalProperties": {"type": "string"},
+                    },
                 },
                 "required": ["url"],
             },
@@ -778,6 +797,37 @@ async def list_tools() -> list[types.Tool]:
                     "llm_model": {
                         "type": "string",
                         "description": "LLM model name from verify_provider_key. Do not guess or hardcode.",
+                    },
+                    "cookies": {
+                        "type": "object",
+                        "description": (
+                            "Optional dict of cookies for authenticated crawling "
+                            '(e.g. {"session": "abc123"}). '
+                            "Only sent to URLs within the permitted domain scope — never leaked to external domains. "
+                            "Only used in local-fetch mode (default). Never forwarded to the server."
+                        ),
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "headers": {
+                        "type": "object",
+                        "description": (
+                            "Optional dict of additional HTTP request headers "
+                            '(e.g. {"Authorization": "Bearer eyJ..."}). '
+                            "Same domain-isolation rules apply as cookies. "
+                            "Only used in local-fetch mode (default)."
+                        ),
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "allow_subdomains": {
+                        "type": "boolean",
+                        "description": (
+                            "If true, also crawl subdomains of the root domain "
+                            "(e.g. wiki.company.com when root is company.com). "
+                            "Cookies and headers are shared across all subdomains within scope. "
+                            "Multi-part TLDs (.co.uk, .com.br) are handled safely. "
+                            "Default: false (exact domain match only)."
+                        ),
+                        "default": False,
                     },
                 },
                 "required": ["url"],
@@ -1635,6 +1685,8 @@ async def _handle_scrape_url(arguments: dict) -> list[types.TextContent]:
             llm_provider=llm_provider if contextual_retrieval else None,
             llm_api_key=llm_api_key,
             llm_model=arguments.get("llm_model"),
+            cookies=arguments.get("cookies") or None,
+            headers=arguments.get("headers") or None,
         )
     finally:
         client.close()
@@ -1709,6 +1761,9 @@ async def _handle_crawl_site(arguments: dict) -> list[types.TextContent]:
             llm_provider=llm_provider if contextual_retrieval else None,
             llm_api_key=llm_api_key,
             llm_model=arguments.get("llm_model"),
+            cookies=arguments.get("cookies") or None,
+            headers=arguments.get("headers") or None,
+            allow_subdomains=arguments.get("allow_subdomains", False),
         )
     finally:
         client.close()

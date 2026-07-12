@@ -245,6 +245,49 @@ To enable server fetch, add `SCRAPEDATSHI_FETCH_MODE` to your MCP config:
 
 ---
 
+## Authenticated Scraping (v0.5.1+)
+
+For pages behind a login wall, you can pass your session cookies and/or custom headers to `scrape_url` and `crawl_site`. Credentials are **only sent to URLs within the permitted domain scope** — they are never leaked to external domains.
+
+### Scrape a login-walled page
+
+Just tell Claude:
+
+> *"Scrape https://internal.company.com/wiki/api-docs — use my session cookie: abc123"*
+
+Claude will call `scrape_url` with:
+
+```json
+{
+  "url": "https://internal.company.com/wiki/api-docs",
+  "cookies": {"session": "abc123"},
+  "headers": {"Authorization": "Bearer eyJ..."}
+}
+```
+
+### Authenticated crawl with subdomain scope
+
+> *"Crawl https://company.com including wiki.company.com and docs.company.com — use session cookie abc123"*
+
+Claude will call `crawl_site` with:
+
+```json
+{
+  "url": "https://company.com",
+  "cookies": {"session": "abc123"},
+  "allow_subdomains": true,
+  "max_pages": 20
+}
+```
+
+**Security model:**
+- Cookies and headers are **only sent to URLs within the permitted domain scope** — never to external domains discovered during crawling
+- `allow_subdomains: false` (default): only the exact hostname receives credentials
+- `allow_subdomains: true`: credentials are shared with subdomains of the root domain (e.g. `wiki.company.com` when root is `company.com`). Multi-part TLDs (`.co.uk`, `.com.br`) are handled safely.
+- Credentials are **never forwarded to the scrapedatshi server** — they stay on the machine running Claude Desktop
+
+---
+
 ## Example conversations
 
 ### Scrape a single page
