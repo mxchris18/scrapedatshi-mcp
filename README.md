@@ -29,7 +29,7 @@ Just talk to Claude naturally:
 | `verify_provider_key` | Verify an LLM or embedding API key + get live model list |
 | `get_usage_guide` | Returns the guided wizard flow and tool selection reference |
 | `scrape_url` | Scrape & chunk a single URL into RAG-ready text segments |
-| `chunk_file` | Upload a local file (PDF, MD, TXT, etc.) and chunk it into RAG-ready segments |
+| `chunk_file` | Upload a local file (PDF, MD, TXT, CSV, XLSX, DOCX, IPYNB, HTML, XML, code files, etc.) and chunk it into RAG-ready segments |
 | `crawl_site` | Crawl an entire site (sitemap or spider mode) and return all chunks |
 | `extract_data` | Extract structured schema fields from a URL using your LLM |
 | `extract_crawl` | Multi-page schema extraction via site crawl |

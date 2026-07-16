@@ -8,7 +8,7 @@ Tools exposed:
     verify_provider_key      — Verify an LLM or embedding API key + get live model list
     get_usage_guide          — Returns the guided wizard flow Claude should follow
     scrape_url               — Scrape & chunk a single URL
-    chunk_file               — Upload a local file (PDF/MD/TXT/etc), chunk it, return JSON
+    chunk_file               — Upload a local file (PDF/MD/TXT/CSV/XLSX/DOCX/IPYNB/code/etc), chunk it, return JSON
     crawl_site               — Crawl a whole site (sitemap or spider mode)
     extract_data             — Extract structured schema from a URL using your LLM
     extract_crawl            — Multi-page schema extraction via site crawl
@@ -1114,7 +1114,10 @@ async def list_tools() -> list[types.Tool]:
             description=(
                 "Parse a local file and chunk its content into RAG-ready text segments. "
                 "Returns structured JSON chunks. No embedding or vector DB required.\n\n"
-                "Supported file formats: .pdf, .md, .txt, .yaml, .yml, .json\n"
+                "Supported file formats: .pdf, .md, .txt, .yaml, .yml, .json, .csv, .xlsx, .xls,\n"
+                ".docx, .ipynb, .html, .htm, .xml, .toml, .ini, .cfg, and all common code files\n"
+                "(.py, .js, .ts, .jsx, .tsx, .sql, .go, .rb, .java, .cs, .cpp, .c, .rs, .php,\n"
+                ".sh, .bash, .zsh, .r, .swift, .kt, .scala)\n"
                 "Maximum file size: 50 MB\n\n"
                 "FETCH MODE: By default (local-fetch mode), the file is parsed on the "
                 "user's machine using their own CPU — no heavy PDF processing on the server. "
@@ -1185,7 +1188,10 @@ async def list_tools() -> list[types.Tool]:
             description=(
                 "Full RAG pipeline for local files: upload a file, embed the chunks using "
                 "your embedding provider, and inject the vectors into your vector database.\n\n"
-                "Supported file formats: .pdf, .md, .txt, .yaml, .yml, .json\n"
+                "Supported file formats: .pdf, .md, .txt, .yaml, .yml, .json, .csv, .xlsx, .xls,\n"
+                ".docx, .ipynb, .html, .htm, .xml, .toml, .ini, .cfg, and all common code files\n"
+                "(.py, .js, .ts, .jsx, .tsx, .sql, .go, .rb, .java, .cs, .cpp, .c, .rs, .php,\n"
+                ".sh, .bash, .zsh, .r, .swift, .kt, .scala)\n"
                 "Maximum file size: 50 MB\n\n"
                 "Use this when the user wants to ADD a local document (PDF, markdown, etc.) "
                 "to their vector DB. This is the file-based equivalent of sync_to_vectordb.\n\n"
