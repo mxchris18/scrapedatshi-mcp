@@ -14,6 +14,7 @@ Tools exposed:
     extract_crawl            — Multi-page schema extraction via site crawl
     sync_to_vectordb         — Full pipeline: scrape URL → embed → inject into vector DB
     ingest_file              — Full pipeline: upload local file → embed → inject into vector DB
+    ingest_scraped           — Full pipeline: bulk-ingest a folder of pre-scraped files → embed → inject into vector DB
     autorag                  — Full pipeline: crawl site → chunk → embed → inject into vector DB
     inspect_vectordb         — Read vector DB metadata: dimension, vector count, suggested models (free)
     query_vectordb           — Semantic search: embed a query and retrieve top-N chunks
@@ -1454,16 +1455,20 @@ async def list_tools() -> list[types.Tool]:
                 ],
             },
         ),
-        # ── ingest_folder ─────────────────────────────────────────────────────
+        # ── ingest_scraped ────────────────────────────────────────────────────
         types.Tool(
-            name="ingest_folder",
+            name="ingest_scraped",
             description=(
-                "Bulk ingest an entire folder of pre-scraped files — chunk, embed, and inject "
+                "Bulk ingest a folder of pre-scraped files — chunk, embed, and inject "
                 "into your vector database. Designed for users who have content from external "
                 "scrapers (Scrapy, Playwright, wget, etc.) and want to embed it into their vector DB.\n\n"
-                "Supports .md, .txt, .json, .yaml, and .yml files. For JSON files, automatically "
-                "detects Scrapy/crawler array exports (e.g. output.json with thousands of items) "
-                "and extracts text from each item individually.\n\n"
+                "Supports all common file types: .md, .txt, .json, .yaml, .yml, .csv, .xlsx, .xls, "
+                ".docx, .ipynb, .html, .htm, .xml, .toml, .ini, .cfg, and all code files "
+                "(.py, .js, .ts, .sql, .go, .rb, .java, .cs, .cpp, .c, .rs, .php, .sh, etc.).\n\n"
+                "CODE-AWARE CHUNKING: .py files are split by top-level class and function (AST-aware). "
+                ".sql files are split by statement block (CREATE TABLE, INSERT INTO, SELECT, etc.).\n\n"
+                "For JSON files, automatically detects Scrapy/crawler array exports and extracts "
+                "text from each item individually.\n\n"
                 "All processing runs locally on the machine running Claude Desktop — no server-side "
                 "crawling. Rate limit errors from your embedding provider are handled automatically "
                 "with exponential backoff.\n\n"
@@ -1615,7 +1620,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             return await _handle_query_vectordb(arguments)
         elif name == "rag_chat":
             return await _handle_rag_chat(arguments)
-        elif name == "ingest_folder":
+        elif name == "ingest_scraped":
             return await _handle_ingest_folder(arguments)
         elif name == "list_embedding_providers":
             return _handle_list_embedding_providers()
@@ -2903,7 +2908,7 @@ async def _handle_ingest_folder(arguments: dict) -> list[types.TextContent]:
 
     client = _get_client()
     try:
-        result = client.pipeline.ingest_folder(
+        result = client.pipeline.ingest_scraped(
             folder_path=folder_path,
             embedding_provider=embedding_provider,
             embedding_api_key=embedding_api_key,
