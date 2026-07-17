@@ -722,6 +722,18 @@ async def list_tools() -> list[types.Tool]:
                         ),
                         "additionalProperties": {"type": "string"},
                     },
+                    "storage_state": {
+                        "type": "object",
+                        "description": (
+                            "Optional Playwright storage state dict for enterprise SSO/MFA authenticated scraping. "
+                            "Captured locally using capture_session() from scrapedatshi[auth] — "
+                            "opens a real browser, user logs in manually, session is captured. "
+                            "Contains cookies and localStorage tokens. "
+                            "Use this for Okta, Duo, or any SSO flow that blocks automated login. "
+                            "Load from a saved session.auth.json file."
+                        ),
+                        "additionalProperties": True,
+                    },
                 },
                 "required": ["url"],
             },
@@ -829,6 +841,18 @@ async def list_tools() -> list[types.Tool]:
                             "Default: false (exact domain match only)."
                         ),
                         "default": False,
+                    },
+                    "storage_state": {
+                        "type": "object",
+                        "description": (
+                            "Optional Playwright storage state dict for enterprise SSO/MFA authenticated crawling. "
+                            "Captured locally using capture_session() from scrapedatshi[auth] — "
+                            "opens a real browser, user logs in manually, session is captured. "
+                            "Contains cookies and localStorage tokens. "
+                            "Use this for Okta, Duo, or any SSO flow that blocks automated login. "
+                            "Load from a saved session.auth.json file."
+                        ),
+                        "additionalProperties": True,
                     },
                 },
                 "required": ["url"],
@@ -1819,6 +1843,7 @@ async def _handle_scrape_url(arguments: dict) -> list[types.TextContent]:
             llm_model=arguments.get("llm_model"),
             cookies=arguments.get("cookies") or None,
             headers=arguments.get("headers") or None,
+            storage_state=arguments.get("storage_state") or None,
         )
     finally:
         client.close()
@@ -1896,6 +1921,7 @@ async def _handle_crawl_site(arguments: dict) -> list[types.TextContent]:
             cookies=arguments.get("cookies") or None,
             headers=arguments.get("headers") or None,
             allow_subdomains=arguments.get("allow_subdomains", False),
+            storage_state=arguments.get("storage_state") or None,
         )
     finally:
         client.close()
