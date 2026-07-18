@@ -646,6 +646,9 @@ async def list_tools() -> list[types.Tool]:
                 "Use this when the user wants to read, summarize, or display a page's content "
                 "directly — without splitting it into chunks. For RAG/embedding use cases where "
                 "you need the content split into segments, use chunk_url instead.\n\n"
+                "The response includes selectors_found — a list of CSS selectors for the main "
+                "content sections detected on the page (e.g. ['article', '#main-content']). "
+                "Use one to re-scrape just that section via the selector= parameter.\n\n"
                 "Supports authenticated scraping via cookies, headers, and Playwright storage state."
             ),
             inputSchema={

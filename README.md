@@ -330,6 +330,12 @@ Claude will call `crawl_site` with the `storage_state` parameter containing the 
 
 Claude calls `scrape_url` and returns the full page as clean Markdown — title, credits used, and the raw text in one piece.
 
+The response also includes `selectors_found` — a list of CSS selectors for the main content sections detected on the page. Claude can use these to re-scrape just a specific section:
+
+> **You:** Now scrape just the pricing section.
+
+Claude calls `scrape_url` again with `selector="section#pricing"` (from `selectors_found`).
+
 ---
 
 ### Chunk a page for RAG
