@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scrapedatshi-mcp"
-version = "0.6.7"
+version = "0.6.8"
 description = "MCP server for the scrapedatshi RAG pipeline API — use scrapedatshi tools directly from Claude Desktop"
 readme = "README.md"
 license = { text = "MIT" }

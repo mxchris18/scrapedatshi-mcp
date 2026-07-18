@@ -18,6 +18,8 @@ Just talk to Claude naturally:
 - *"What embedding providers does scrapedatshi support?"*
 - *"Inspect my Pinecone index and tell me what embedding model was used"*
 - *"Query my Pinecone index for information about API authentication"*
+- *"Query my LanceDB with hybrid search — I need to find exact IDs and names, not just semantic matches"*
+- *"Chunk https://docs.example.com using hierarchical chunking so the LLM gets full context on retrieval"*
 - *"Ingest all the JSON files in my ./scrapy_output/ folder into my Pinecone index"*
 
 ---
@@ -39,7 +41,7 @@ Just talk to Claude naturally:
 | `ingest_scraped` | Full pipeline: bulk-ingest a folder of pre-scraped files → embed → inject into your vector DB |
 | `autorag` | Full pipeline: crawl entire site → chunk → embed → inject into your vector DB (large sites auto-batched) |
 | `inspect_vectordb` | Read vector DB metadata: dimension, vector count, suggested embedding models (free) |
-| `query_vectordb` | Semantic search: embed a query and retrieve the most relevant chunks from your vector DB |
+| `query_vectordb` | Semantic search: embed a query and retrieve the most relevant chunks from your vector DB. Supports `hybrid_search=true` (vector + BM25 + RRF) for cross-referencing accuracy |
 | `rag_chat` | RAG Chat: retrieve top-N chunks from your vector DB and generate a grounded LLM answer |
 | `list_embedding_providers` | Discover supported embedding providers + model notes |
 | `list_vector_db_providers` | Discover supported vector DBs + required config fields |

@@ -712,6 +712,12 @@ async def list_tools() -> list[types.Tool]:
                 "Use this when the user wants the content of a web page split into chunks "
                 "for embedding, retrieval, or RAG — NOT when they just want to read or "
                 "summarize the page (use scrape_url for that).\n\n"
+                "HIERARCHICAL CHUNKING (hierarchical=true): Produces small child chunks "
+                "(~child_chunk_size tokens) for precise vector matching, each carrying a "
+                "larger parent chunk (~chunk_size tokens) as metadata. When a child chunk "
+                "matches a query, the LLM receives the full parent chunk for context — "
+                "dramatically improving cross-referencing accuracy. Recommend this for "
+                "long-form documentation and multi-hop questions.\n\n"
                 "If contextual_retrieval=true is requested, follow the PRE-FLIGHT sequence:\n"
                 "1. Call verify_provider_key(provider, 'llm') → get live model list\n"
                 "2. Ask user to choose a model from the list\n"
@@ -746,6 +752,24 @@ async def list_tools() -> list[types.Tool]:
                         "default": 50,
                         "minimum": 0,
                         "maximum": 500,
+                    },
+                    "hierarchical": {
+                        "type": "boolean",
+                        "description": (
+                            "Enable hierarchical (parent-child) chunking. "
+                            "Small child chunks (~child_chunk_size tokens) are embedded for precise vector matching; "
+                            "the larger parent chunk (~chunk_size tokens) is stored as metadata and returned to the LLM "
+                            "for full context on retrieval. Recommend for long-form docs and multi-hop questions. "
+                            "Each chunk will have parent_text and is_hierarchical fields."
+                        ),
+                        "default": False,
+                    },
+                    "child_chunk_size": {
+                        "type": "integer",
+                        "description": "Target token count for child (search) chunks when hierarchical=true. Parent chunks use chunk_size. Default: 128.",
+                        "default": 128,
+                        "minimum": 32,
+                        "maximum": 512,
                     },
                     "js_render": {
                         "type": "boolean",
@@ -2810,6 +2834,8 @@ async def _handle_query_vectordb(arguments: dict) -> list[types.TextContent]:
             )
         ]
 
+    hybrid_search = arguments.get("hybrid_search", False)
+
     client = _get_client()
     try:
         result = client.pipeline.query_vectordb(
@@ -2820,6 +2846,7 @@ async def _handle_query_vectordb(arguments: dict) -> list[types.TextContent]:
             vector_db=vector_db,
             vector_db_config=vector_db_config,
             top_k=arguments.get("top_k", 5),
+            hybrid_search=hybrid_search,
         )
     finally:
         client.close()
@@ -2830,17 +2857,37 @@ async def _handle_query_vectordb(arguments: dict) -> list[types.TextContent]:
         f"🧮 Embedding: {result.embedding_provider} / {result.embedding_model}",
         f"🗄️  Vector DB: {result.vector_db_provider}",
         f"📦 Chunks retrieved: {result.chunks_retrieved} / {result.top_k_requested} requested",
-        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
     ]
+    if result.hybrid_search:
+        lines.append("🔀 Hybrid search: enabled (vector + BM25 + RRF)")
+    lines.append(
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}"
+    )
 
     if result.results:
         lines.append("\n--- Results ---")
         for i, r in enumerate(result.results, 1):
             preview = r.text[:300].replace("\n", " ")
-            lines.append(f"\n[{i}] Score: {r.score:.3f}")
+            score_str = (
+                f"RRF: {r.rrf_score:.4f}"
+                if r.rrf_score is not None
+                else f"Score: {r.score:.3f}"
+            )
+            sources_str = f" | Sources: {r.hybrid_sources}" if r.hybrid_sources else ""
+            lines.append(f"\n[{i}] {score_str}{sources_str}")
             lines.append(preview + ("..." if len(r.text) > 300 else ""))
             if r.metadata:
-                lines.append(f"    Metadata: {json.dumps(r.metadata)}")
+                # For hierarchical chunks, surface parent_text separately
+                meta_display = {
+                    k: v for k, v in r.metadata.items() if k != "parent_text"
+                }
+                if r.metadata.get("is_hierarchical") and r.metadata.get("parent_text"):
+                    parent_preview = str(r.metadata["parent_text"])[:200].replace(
+                        "\n", " "
+                    )
+                    lines.append(f"    📄 Parent context: {parent_preview}...")
+                if meta_display:
+                    lines.append(f"    Metadata: {json.dumps(meta_display)}")
     else:
         lines.append(
             "\n⚠️ No results found. Check that your embedding model matches the one used during ingestion."
