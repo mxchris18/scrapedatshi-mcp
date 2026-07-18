@@ -28,7 +28,8 @@ Just talk to Claude naturally:
 |---|---|
 | `verify_provider_key` | Verify an LLM or embedding API key + get live model list |
 | `get_usage_guide` | Returns the guided wizard flow and tool selection reference |
-| `scrape_url` | Scrape & chunk a single URL into RAG-ready text segments |
+| `scrape_url` | Scrape a URL and return clean Markdown — no chunking, just the raw text |
+| `chunk_url` | Scrape & chunk a single URL into RAG-ready text segments |
 | `chunk_file` | Upload a local file (PDF, MD, TXT, CSV, XLSX, DOCX, IPYNB, HTML, XML, code files, etc.) and chunk it into RAG-ready segments |
 | `crawl_site` | Crawl an entire site (sitemap or spider mode) and return all chunks |
 | `extract_data` | Extract structured schema fields from a URL using your LLM |
@@ -323,11 +324,19 @@ Claude will call `crawl_site` with the `storage_state` parameter containing the 
 
 ## Example conversations
 
-### Scrape a single page
+### Get clean Markdown from a page
 
-> **You:** Scrape https://docs.example.com/getting-started and show me the chunks.
+> **You:** Scrape https://docs.example.com/getting-started and show me the content.
 
-Claude calls `scrape_url` and returns the chunked content with token counts and credit usage.
+Claude calls `scrape_url` and returns the full page as clean Markdown — title, credits used, and the raw text in one piece.
+
+---
+
+### Chunk a page for RAG
+
+> **You:** Chunk https://docs.example.com/getting-started into RAG-ready segments.
+
+Claude calls `chunk_url` and returns the structured chunks with token counts and credit usage.
 
 ---
 

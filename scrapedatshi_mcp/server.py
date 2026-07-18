@@ -7,7 +7,8 @@ MCP-compatible AI client.
 Tools exposed:
     verify_provider_key      — Verify an LLM or embedding API key + get live model list
     get_usage_guide          — Returns the guided wizard flow Claude should follow
-    scrape_url               — Scrape & chunk a single URL
+    scrape_url               — Scrape a URL and return clean Markdown (no chunking)
+    chunk_url                — Scrape & chunk a single URL into RAG-ready text segments
     chunk_file               — Upload a local file (PDF/MD/TXT/CSV/XLSX/DOCX/IPYNB/code/etc), chunk it, return JSON
     crawl_site               — Crawl a whole site (sitemap or spider mode)
     extract_data             — Extract structured schema from a URL using your LLM
@@ -640,11 +641,74 @@ async def list_tools() -> list[types.Tool]:
         types.Tool(
             name="scrape_url",
             description=(
+                "Scrape a single web URL and return the full page content as clean Markdown. "
+                "No chunking — returns the raw text in one piece. No embedding or vector DB required.\n\n"
+                "Use this when the user wants to read, summarize, or display a page's content "
+                "directly — without splitting it into chunks. For RAG/embedding use cases where "
+                "you need the content split into segments, use chunk_url instead.\n\n"
+                "Supports authenticated scraping via cookies, headers, and Playwright storage state."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The web URL to scrape.",
+                    },
+                    "selector": {
+                        "type": "string",
+                        "description": "Optional CSS selector to target a specific element (e.g. 'article', '.content', 'main').",
+                    },
+                    "js_render": {
+                        "type": "boolean",
+                        "description": "Use headless Chromium to render JavaScript before scraping. Required for SPAs and JS-heavy pages. Ask the user before enabling. Adds a small surcharge.",
+                        "default": False,
+                    },
+                    "cookies": {
+                        "type": "object",
+                        "description": (
+                            "Optional dict of cookies to include with the request for authenticated scraping "
+                            '(e.g. {"session": "abc123", "auth_token": "xyz"}). '
+                            "Only used in local-fetch mode (default). Never forwarded to the server. "
+                            "Use this for pages behind a login wall — pass your browser session cookie."
+                        ),
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "headers": {
+                        "type": "object",
+                        "description": (
+                            "Optional dict of additional HTTP request headers "
+                            '(e.g. {"Authorization": "Bearer eyJ..."}). '
+                            "Only used in local-fetch mode (default). Never forwarded to the server."
+                        ),
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "storage_state": {
+                        "type": "object",
+                        "description": (
+                            "Optional Playwright storage state dict for enterprise SSO/MFA authenticated scraping. "
+                            "Captured locally using capture_session() from scrapedatshi[auth] — "
+                            "opens a real browser, user logs in manually, session is captured. "
+                            "Contains cookies and localStorage tokens. "
+                            "Use this for Okta, Duo, or any SSO flow that blocks automated login. "
+                            "Load from a saved session.auth.json file."
+                        ),
+                        "additionalProperties": True,
+                    },
+                },
+                "required": ["url"],
+            },
+        ),
+        # ── chunk_url ─────────────────────────────────────────────────────────
+        types.Tool(
+            name="chunk_url",
+            description=(
                 "Scrape a single web URL, chunk its content into RAG-ready text segments, "
                 "and return the structured chunks. No embedding or vector DB required — "
-                "this is the fastest and cheapest operation.\n\n"
-                "Use this when the user wants to read, summarize, or process the content "
-                "of a specific web page WITHOUT extracting structured fields.\n\n"
+                "this is the fastest and cheapest operation for RAG pipelines.\n\n"
+                "Use this when the user wants the content of a web page split into chunks "
+                "for embedding, retrieval, or RAG — NOT when they just want to read or "
+                "summarize the page (use scrape_url for that).\n\n"
                 "If contextual_retrieval=true is requested, follow the PRE-FLIGHT sequence:\n"
                 "1. Call verify_provider_key(provider, 'llm') → get live model list\n"
                 "2. Ask user to choose a model from the list\n"
@@ -1623,7 +1687,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
         elif name == "get_usage_guide":
             return _handle_get_usage_guide()
         elif name == "scrape_url":
-            return await _handle_scrape_url(arguments)
+            return await _handle_scrape_url_markdown(arguments)
+        elif name == "chunk_url":
+            return await _handle_chunk_url(arguments)
         elif name == "crawl_site":
             return await _handle_crawl_site(arguments)
         elif name == "extract_data":
@@ -1728,7 +1794,8 @@ def _handle_get_usage_guide() -> list[types.TextContent]:
 
 | Goal | Tool |
 |---|---|
-| Read/summarize a single web page | `scrape_url` |
+| Get clean Markdown from a web page | `scrape_url` |
+| Get RAG-ready chunks from a web page | `chunk_url` |
 | Chunk a local file (PDF, MD, TXT, etc.) | `chunk_file` |
 | Get chunks from multiple pages | `crawl_site` |
 | Extract specific fields from one page | `extract_data` |
@@ -1796,7 +1863,44 @@ When env vars are set, keys are resolved automatically — users don't need to t
     return [types.TextContent(type="text", text=guide)]
 
 
-async def _handle_scrape_url(arguments: dict) -> list[types.TextContent]:
+async def _handle_scrape_url_markdown(arguments: dict) -> list[types.TextContent]:
+    """Handler for scrape_url — returns clean Markdown (no chunking)."""
+    url = arguments.get("url")
+    if not url:
+        return [types.TextContent(type="text", text="❌ 'url' is required.")]
+
+    client = _get_client()
+    try:
+        result = client.pipeline.scrape_url(
+            url=url,
+            selector=arguments.get("selector"),
+            js_render=arguments.get("js_render", False),
+            cookies=arguments.get("cookies") or None,
+            headers=arguments.get("headers") or None,
+            storage_state=arguments.get("storage_state") or None,
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"✅ Scraped: {result.source}",
+    ]
+    if result.title:
+        lines.append(f"📄 Title: {result.title}")
+    lines.append(
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}"
+    )
+    if result.content_truncated:
+        lines.append("⚠️  Content was truncated (exceeded ~75,000 words)")
+
+    lines.append("\n--- Markdown ---")
+    lines.append(result.markdown)
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_chunk_url(arguments: dict) -> list[types.TextContent]:
+    """Handler for chunk_url — returns RAG-ready chunks."""
     url = arguments.get("url")
     if not url:
         return [types.TextContent(type="text", text="❌ 'url' is required.")]
@@ -1849,7 +1953,7 @@ async def _handle_scrape_url(arguments: dict) -> list[types.TextContent]:
         client.close()
 
     lines = [
-        f"✅ Scraped: {result.source}",
+        f"✅ Chunked: {result.source}",
         f"📦 Chunks: {result.total_chunks}",
         f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
     ]
