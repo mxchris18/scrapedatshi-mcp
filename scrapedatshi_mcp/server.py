@@ -2890,6 +2890,29 @@ async def _handle_query_vectordb(arguments: dict) -> list[types.TextContent]:
 
     hybrid_search = arguments.get("hybrid_search", False)
 
+    # Build optional query_rewrite config
+    query_rewrite = None
+    if arguments.get("query_rewrite_provider"):
+        qr_provider = arguments.get("query_rewrite_provider")
+        qr_api_key = _resolve_llm_key(
+            {
+                "llm_provider": qr_provider,
+                "llm_api_key": arguments.get("query_rewrite_api_key"),
+            },
+            qr_provider,
+        )
+        qr_model = arguments.get("query_rewrite_model")
+        if qr_api_key and qr_model:
+            query_rewrite = {
+                "llm_provider": qr_provider,
+                "llm_api_key": qr_api_key,
+                "llm_model": qr_model,
+            }
+            if arguments.get("conversation_history"):
+                query_rewrite["conversation_history"] = arguments[
+                    "conversation_history"
+                ]
+
     client = _get_client()
     try:
         result = client.pipeline.query_vectordb(
@@ -2901,6 +2924,7 @@ async def _handle_query_vectordb(arguments: dict) -> list[types.TextContent]:
             vector_db_config=vector_db_config,
             top_k=arguments.get("top_k", 5),
             hybrid_search=hybrid_search,
+            query_rewrite=query_rewrite,
         )
     finally:
         client.close()
@@ -2914,6 +2938,8 @@ async def _handle_query_vectordb(arguments: dict) -> list[types.TextContent]:
     ]
     if result.hybrid_search:
         lines.append("🔀 Hybrid search: enabled (vector + BM25 + RRF)")
+    if result.rewritten_query:
+        lines.append(f"✏️  Query rewritten to: {result.rewritten_query}")
     lines.append(
         f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}"
     )
@@ -3042,6 +3068,9 @@ async def _handle_rag_chat(arguments: dict) -> list[types.TextContent]:
             llm_api_key=llm_api_key,
             llm_model=arguments.get("llm_model"),
             top_k=arguments.get("top_k", 5),
+            hybrid_search=arguments.get("hybrid_search", False),
+            query_rewrite=arguments.get("query_rewrite", False),
+            conversation_history=arguments.get("conversation_history") or None,
         )
     finally:
         client.close()
@@ -3052,8 +3081,14 @@ async def _handle_rag_chat(arguments: dict) -> list[types.TextContent]:
         f"🧮 Embedding: {result.embedding_provider} / {result.embedding_model}",
         f"🤖 LLM: {result.llm_provider} / {result.llm_model}",
         f"📦 Chunks retrieved: {result.chunks_retrieved}",
-        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
     ]
+    if result.hybrid_search:
+        lines.append("🔀 Hybrid search: enabled (vector + BM25 + RRF)")
+    if result.rewritten_query:
+        lines.append(f"✏️  Query rewritten to: {result.rewritten_query}")
+    lines.append(
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}"
+    )
     if result.llm_error:
         lines.append(f"⚠️  LLM error: {result.llm_error}")
 
@@ -3064,7 +3099,12 @@ async def _handle_rag_chat(arguments: dict) -> list[types.TextContent]:
         lines.append("\n--- Sources ---")
         for i, s in enumerate(result.sources, 1):
             preview = s.text[:200].replace("\n", " ")
-            lines.append(f"\n[{i}] Score: {s.score:.3f}")
+            score_str = (
+                f"RRF: {s.rrf_score:.4f}"
+                if s.rrf_score is not None
+                else f"Score: {s.score:.3f}"
+            )
+            lines.append(f"\n[{i}] {score_str}")
             lines.append(preview + ("..." if len(s.text) > 200 else ""))
 
     return [types.TextContent(type="text", text="\n".join(lines))]

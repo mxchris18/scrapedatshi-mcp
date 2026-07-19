@@ -44,8 +44,8 @@ Just talk to Claude naturally:
 | `ingest_scraped` | Full pipeline: bulk-ingest a folder of pre-scraped files → embed → inject into your vector DB |
 | `autorag` | Full pipeline: crawl entire site → chunk → embed → inject into your vector DB (large sites auto-batched) |
 | `inspect_vectordb` | Read vector DB metadata: dimension, vector count, suggested embedding models (free) |
-| `query_vectordb` | Semantic search: embed a query and retrieve the most relevant chunks from your vector DB. Supports `hybrid_search=true` (vector + BM25 + RRF) for cross-referencing accuracy |
-| `rag_chat` | RAG Chat: retrieve top-N chunks from your vector DB and generate a grounded LLM answer |
+| `query_vectordb` | Semantic search: embed a query and retrieve the most relevant chunks from your vector DB. Supports `hybrid_search=true` (vector + BM25 + RRF) and optional `query_rewrite` (LLM-powered query rewriting before embedding) |
+| `rag_chat` | RAG Chat: retrieve top-N chunks from your vector DB and generate a grounded LLM answer. Supports `hybrid_search=true`, `query_rewrite=true` (uses the same LLM — no extra keys), and `conversation_history` for pronoun resolution |
 | `list_embedding_providers` | Discover supported embedding providers + model notes |
 | `list_vector_db_providers` | Discover supported vector DBs + required config fields |
 
@@ -380,6 +380,30 @@ Claude calls `extract_crawl` with `max_pages=10` and returns per-page extraction
 > **You:** Sync https://docs.example.com to my Pinecone index. The index host is https://my-index-abc123.svc.pinecone.io. Use OpenAI text-embedding-3-small.
 
 Claude calls `sync_to_vectordb`. If `OPENAI_API_KEY` and `PINECONE_API_KEY` are set in your env config, no keys need to be typed in chat.
+
+---
+
+### Query your vector database
+
+> **You:** Query my Pinecone index for "how do I authenticate with the API?"
+
+Claude calls `inspect_vectordb` first to confirm the embedding model, then calls `query_vectordb` and returns the top matching chunks.
+
+---
+
+### Hybrid search — exact terms + semantic
+
+> **You:** Query my LanceDB for "Project Alpha manager" using hybrid search — I need exact name matching.
+
+Claude calls `query_vectordb` with `hybrid_search=true`, combining BM25 keyword search with vector similarity using Reciprocal Rank Fusion (RRF). Results include `rrf_score` and `hybrid_sources` showing which search method found each chunk.
+
+---
+
+### RAG chat with query rewriting
+
+> **You:** Ask my knowledge base: "what about the second pricing tier?" — use hybrid search and rewrite the query first.
+
+Claude calls `rag_chat` with `hybrid_search=true` and `query_rewrite=true`. The query is rewritten into a crisp search term before embedding (using the same LLM configured for answer generation — no extra keys needed), then hybrid search retrieves the most relevant chunks, and the LLM generates a grounded answer. The response shows the rewritten query so you can see what was actually searched.
 
 ---
 
