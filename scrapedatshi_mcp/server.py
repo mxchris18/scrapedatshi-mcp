@@ -8,6 +8,7 @@ Tools exposed:
     verify_provider_key      — Verify an LLM or embedding API key + get live model list
     get_usage_guide          — Returns the guided wizard flow Claude should follow
     scrape_url               — Scrape a URL and return clean Markdown (no chunking)
+    pdf_extract              — Extract text or tables from a PDF (URL or local file)
     chunk_url                — Scrape & chunk a single URL into RAG-ready text segments
     chunk_file               — Upload a local file (PDF/MD/TXT/CSV/XLSX/DOCX/IPYNB/code/etc), chunk it, return JSON
     crawl_site               — Crawl a whole site (sitemap or spider mode)
@@ -1680,6 +1681,57 @@ async def list_tools() -> list[types.Tool]:
                 ],
             },
         ),
+        # ── pdf_extract ───────────────────────────────────────────────────────
+        types.Tool(
+            name="pdf_extract",
+            description=(
+                "Extract clean text or structured tables from a PDF — by URL or local file path.\n\n"
+                "Use this when the user wants to read, summarize, or process a PDF document "
+                "without chunking or embedding it. For RAG use cases where you need the PDF "
+                "split into segments, use chunk_url (for PDF URLs) or chunk_file (for local PDFs).\n\n"
+                "Billing:\n"
+                "  - File upload: $0.0020 per request\n"
+                "  - URL fetch:   $0.0040 per request (server fetches the PDF)\n\n"
+                "No pre-flight required — no LLM or embedding key needed.\n\n"
+                "Provide exactly ONE of: url (direct PDF URL) or file_path (absolute local path)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": (
+                            "Direct URL to a PDF file (e.g. S3 link, CDN URL, https://.../report.pdf). "
+                            "The server fetches and extracts the PDF. Billed at $0.0040."
+                        ),
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": (
+                            "Absolute path to a local .pdf file on the user's machine. "
+                            "Example: 'C:/Users/user/Documents/report.pdf' or '/home/user/docs/manual.pdf'. "
+                            "Billed at $0.0020."
+                        ),
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": (
+                            "'text' (default) — returns the full PDF content as clean Markdown text. "
+                            "'tables' — returns structured table data as a JSON array. "
+                            "Use 'tables' when the user specifically wants table data extracted."
+                        ),
+                        "enum": ["text", "tables"],
+                        "default": "text",
+                    },
+                    "preserve_headings": {
+                        "type": "boolean",
+                        "description": "When mode='text', attempt to preserve heading structure from the PDF. Default: true.",
+                        "default": True,
+                    },
+                },
+                "required": [],
+            },
+        ),
         # ── list_embedding_providers ──────────────────────────────────────────
         types.Tool(
             name="list_embedding_providers",
@@ -1737,6 +1789,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             return await _handle_query_vectordb(arguments)
         elif name == "rag_chat":
             return await _handle_rag_chat(arguments)
+        elif name == "pdf_extract":
+            return await _handle_pdf_extract(arguments)
         elif name == "ingest_scraped":
             return await _handle_ingest_folder(arguments)
         elif name == "list_embedding_providers":
@@ -3124,6 +3178,64 @@ async def _handle_ingest_folder(arguments: dict) -> list[types.TextContent]:
             lines.append(f"  • {err['file']}: {err['error']}")
         if len(result.errors) > 10:
             lines.append(f"  ... and {len(result.errors) - 10} more errors.")
+
+    return [types.TextContent(type="text", text="\n".join(lines))]
+
+
+async def _handle_pdf_extract(arguments: dict) -> list[types.TextContent]:
+    """Handler for pdf_extract — extract text or tables from a PDF."""
+    url = arguments.get("url")
+    file_path = arguments.get("file_path")
+
+    if not url and not file_path:
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    "❌ Either 'url' or 'file_path' is required.\n"
+                    "  - url: direct PDF URL (e.g. https://example.com/report.pdf)\n"
+                    "  - file_path: absolute path to a local .pdf file"
+                ),
+            )
+        ]
+    if url and file_path:
+        return [
+            types.TextContent(
+                type="text",
+                text="❌ Provide either 'url' or 'file_path', not both.",
+            )
+        ]
+
+    mode = arguments.get("mode", "text")
+    preserve_headings = arguments.get("preserve_headings", True)
+
+    client = _get_client()
+    try:
+        result = client.pipeline.pdf_extract(
+            url=url or None,
+            file_path=file_path or None,
+            mode=mode,
+            preserve_headings=preserve_headings,
+        )
+    finally:
+        client.close()
+
+    lines = [
+        f"✅ PDF extracted: {result.source}",
+        f"📄 Mode: {result.mode}",
+        f"💳 Credits used: ${result.credits_used:.4f} | Remaining: ${result.credits_remaining:.4f}",
+    ]
+
+    if result.mode == "text" and result.text:
+        lines.append(f"📝 Length: {len(result.text):,} chars")
+        lines.append("\n--- Extracted Text ---")
+        lines.append(result.text)
+    elif result.mode == "tables" and result.tables is not None:
+        lines.append(f"📊 Tables found: {len(result.tables)}")
+        lines.append("\n--- Extracted Tables ---")
+        lines.append(json.dumps(result.tables, indent=2, ensure_ascii=False))
+    else:
+        lines.append("⚠️  No content returned.")
 
     return [types.TextContent(type="text", text="\n".join(lines))]
 

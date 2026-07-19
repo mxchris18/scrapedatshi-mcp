@@ -11,6 +11,8 @@ Use scrapedatshi's scraping, crawling, extraction, and vector DB sync tools dire
 Just talk to Claude naturally:
 
 - *"Scrape https://docs.example.com and give me the chunks"*
+- *"Extract the text from this PDF: https://example.com/annual-report.pdf"*
+- *"Extract all tables from this local PDF: C:/Users/me/Documents/financials.pdf"*
 - *"Chunk this PDF URL: https://my-bucket.s3.amazonaws.com/report.pdf"* — PDF URLs are automatically detected and extracted
 - *"Crawl https://example.com/products and extract the title and price from every page"*
 - *"Sync https://docs.example.com to my Pinecone index using OpenAI embeddings"*
@@ -31,6 +33,7 @@ Just talk to Claude naturally:
 | `verify_provider_key` | Verify an LLM or embedding API key + get live model list |
 | `get_usage_guide` | Returns the guided wizard flow and tool selection reference |
 | `scrape_url` | Scrape a URL and return clean Markdown — no chunking, just the raw text |
+| `pdf_extract` | Extract text or tables from a PDF (URL or local file) — no chunking, no embedding needed |
 | `chunk_url` | Scrape & chunk a single URL into RAG-ready text segments |
 | `chunk_file` | Upload a local file (PDF, MD, TXT, CSV, XLSX, DOCX, IPYNB, HTML, XML, code files, etc.) and chunk it into RAG-ready segments |
 | `crawl_site` | Crawl an entire site (sitemap or spider mode) and return all chunks |
