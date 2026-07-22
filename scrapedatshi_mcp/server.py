@@ -1092,6 +1092,17 @@ async def list_tools() -> list[types.Tool]:
                         "description": "If true, extracts ALL matching items on each page as a JSON array.",
                         "default": False,
                     },
+                    "llm_rpm": {
+                        "type": "integer",
+                        "description": (
+                            "Optional rate limit in requests-per-minute for LLM calls. "
+                            "Use this to avoid hitting provider rate limits — e.g. 10 for Gemini free/Tier-1, "
+                            "60 for OpenAI Tier-1. When omitted the server uses a short jittered politeness delay. "
+                            "Always suggest this when the user is on Gemini or a lower-tier plan."
+                        ),
+                        "minimum": 1,
+                        "maximum": 600,
+                    },
                 },
                 "required": ["url", "schema", "llm_provider"],
             },
@@ -2275,6 +2286,7 @@ async def _handle_extract_crawl(arguments: dict) -> list[types.TextContent]:
             include_pattern=arguments.get("include_pattern"),
             exclude_pattern=arguments.get("exclude_pattern"),
             extract_as_list=arguments.get("extract_as_list", False),
+            llm_rpm=arguments.get("llm_rpm"),
         )
     finally:
         client.close()
